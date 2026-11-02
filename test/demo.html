@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>r/demo — Internet Autocorrect test</title>
+<style>
+  body { font: 15px/1.6 system-ui, sans-serif; max-width: 720px; margin: 24px auto; padding: 0 16px; color: #1a1a1b; background: #dae0e6; }
+  .post, .comment { background: #fff; border-radius: 6px; padding: 12px 16px; margin: 10px 0; }
+  .user { color: #787c7e; font-size: 12px; }
+  code { background: #f1f1f1; }
+  textarea { width: 100%; }
+</style>
+<script src="chrome-shim.js"></script>
+</head><body>
+<div class="comment" id="x-replies"><div class="user">x.com replies</div>
+  <p>Congrats guys but just give is fable 5.5</p>
+  <p>It's crazy they chose Frankfurt Stock Exchange huge win for the EU</p>
+  <p>So the ai hype cycle is coming to an end.</p>
+  <p>honestly it s huge for them</p>
+  <p>ive been there, that's what happened lol</p>
+</div>
+<div class="comment" id="thread"><div class="user">u/collapsible <button id="collapse">collapse</button></div>
+  <div id="threadBody" style="overflow:hidden"><p>I think there going to win, I definately agree.</p></div>
+</div>
+<script>document.getElementById('collapse').onclick = () => { const b = document.getElementById('threadBody'); b.style.height = b.style.height ? '' : '0px'; };</script>
+<div class="post"><div class="user">u/throwaway_42 · 5h</div>
+  <h2>Their is no way this is real</h2>
+  <p>I think there going to raise prices again. Its not that hard to see, its a pattern. Your the best mod btw.</p>
+</div>
+<div class="comment"><div class="user">u/grammar_hater</div>
+  <p>Honestly they should of known better then to do that. They're kids could of told them. I definately recieved the email untill yesterday.</p>
+</div>
+<div class="comment"><div class="user">u/someone</div>
+  <p>dont loose hope lol. It was a amazing run and the the ending was great. For all intensive purposes its over though.</p>
+</div>
+<div class="comment"><div class="user">u/careful_writer</div>
+  <p>This sentence is correct: their house is over there, and they're happy. The dog wagged its tail. Is there going to be a sequel?</p>
+  <p>Code is left alone: <code>dont = their_is + 1</code></p>
+  <textarea>Input boxes are never touched: their is alot</textarea>
+</div>
+<div class="comment"><div class="user">u/example_user</div>
+  <p>As a Scot, only their/there are homophones. They’re is not pronounced the same in my accent.</p>
+  <p>Similar teeth-grinders are yore, your and you're. Also could of, would of, and should of instead of would've.</p>
+  <p>People write <em>definately</em> all the time, it's maddening.</p>
+</div>
+<div class="comment"><div class="user">u/model_juggler</div>
+  <p>For issues were Claude says no, I have another model start off the work.</p>
+  <p>Its a good example of there going to fix it, I bet.</p>
+</div>
+<div class="comment"><div class="user">u/another_user</div>
+  <p>I'm well over 50. I can assure you that even in the old readin', writin', and 'rithmatic days, people still chronically confused the spelling of these words.</p>
+  <p>The colour of the centre was grey. They was fixin' to leave, y'all.</p>
+</div>
+<div id="dynamic"></div>
+<script src="../policy.js"></script>
+<script src="../engine.js"></script>
+<script src="../copyfix.js"></script><script src="../clipboard.js"></script><script src="../content.js"></script>
+<script>
+  setTimeout(() => {
+    const c = document.createElement('div'); c.className = 'comment';
+    c.innerHTML = '<div class="user">u/late_loader</div><p>Loaded later (infinite scroll): your welcome, wich is weird.</p>';
+    document.getElementById('dynamic').append(c);
+  }, 1500);
+</script>
+</body></html>

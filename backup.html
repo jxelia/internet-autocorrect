@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Internet Autocorrect — Backup and restore</title>
+  <link rel="stylesheet" href="popup.css">
+  <style>
+    body { width: auto; max-width: 560px; margin: 40px auto; padding: 0 16px; }
+    h1 { font-size: 18px; margin: 0 0 6px; }
+    h2 { font-size: 14px; margin: 26px 0 4px; }
+    p { margin: 4px 0; }
+    .muted { color: var(--muted); font-size: 13px; }
+    .act { margin-top: 10px; display: flex; gap: 10px; align-items: center; }
+    label.primary { display: inline-block; font-weight: 600; border-radius: 6px; padding: 6px 14px; cursor: pointer;
+      background: var(--accent); color: #fff; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <h1>Backup and restore</h1>
+  <p class="muted" id="now"></p>
+
+  <h2>Back up</h2>
+  <p class="muted">Saves your never-change list, learned fixes, history, reports, undone fixes and settings as one
+    file in Downloads. Nothing is sent anywhere.</p>
+  <div class="act"><button class="primary" id="backup">Back up</button></div>
+  <p class="muted" id="backupStatus" role="status"></p>
+
+  <h2>Restore</h2>
+  <p class="muted">Adds a backup's lists to what's here (nothing here is removed) and brings back its settings.</p>
+  <div class="act"><label class="primary" tabindex="0">Choose backup file…
+    <input type="file" id="file" accept=".json,application/json" hidden></label></div>
+  <p class="muted" id="restoreStatus" role="status"></p>
+
+  <script src="backup.js"></script>
+</body>
+</html>

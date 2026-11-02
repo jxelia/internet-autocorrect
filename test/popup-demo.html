@@ -1,0 +1,8 @@
+<!doctype html><html><head><meta charset="utf-8"><title>popup harness</title>
+<style>body{margin:0;display:flex;gap:16px;padding:16px;background:#ddd} iframe{border:0;background:#fff;box-shadow:0 4px 20px #0003}</style>
+</head><body><iframe id="page" src="demo.html" width="760" height="760"></iframe><iframe id="pop" width="380" height="1400"></iframe>
+<script>
+  // Load the popup with a shim that talks to the demo page's content script.
+  const page = document.getElementById('page');
+  page.addEventListener('load', () => setTimeout(() => { document.getElementById('pop').src = 'popup-shim.html'; }, 2500));
+</script></body></html>

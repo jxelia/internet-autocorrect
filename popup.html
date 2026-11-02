@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Internet Autocorrect</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <img src="icons/32.png" alt="" width="22" height="22">
+      <h1>Internet Autocorrect</h1>
+    </div>
+    <label class="switch" title="Turn autocorrect on or off everywhere">
+      <input type="checkbox" id="enabled">
+      <span></span>
+    </label>
+  </header>
+
+  <div class="site">
+    <span>Fix text on <strong id="host">this site</strong></span>
+    <label class="switch small">
+      <input type="checkbox" id="siteEnabled">
+      <span></span>
+    </label>
+  </div>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-tab="page" class="active">This page <b id="pageCount">0</b></button>
+    <button role="tab" data-tab="history">History <b id="historyCount">0</b></button>
+    <button role="tab" data-tab="report">Missed one?</button>
+    <button role="tab" data-tab="settings" aria-label="Settings">Settings</button>
+  </nav>
+
+  <section id="listView">
+    <div class="filterRow">
+      <div class="chips" id="chips"></div>
+      <div class="search" id="searchBox" hidden>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input type="search" id="searchInput" placeholder="Search" autocomplete="off" aria-label="Search fixes">
+        <button class="link icon" id="searchClose" aria-label="Close search" title="Close search"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+      </div>
+      <button class="link icon" id="searchOpen" aria-label="Search" title="Search"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></button>
+    </div>
+    <ul id="list"></ul>
+    <p class="empty" id="empty"></p>
+    <div class="reportBar" id="reportBar">
+      <span>Something wrong on this page?</span>
+      <button class="link send" id="sendReport" aria-label="Send report to Claude" title="Send this page’s report to Claude (saved to Downloads › internet-autocorrect-reports)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2l1.9 1.9M16 2l-1.9 1.9M9 7.1V6a3 3 0 1 1 6 0v1.1"/><path d="M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6z"/><path d="M12 20v-9M6.5 13H3M21 13h-3.5M6 9.5L3.5 8M18 9.5L20.5 8M6.6 17.5L3.5 19M17.4 17.5L20.5 19"/></svg></button>
+      <button class="link copy" id="copyReport" aria-label="Copy report" title="Copy this page’s report"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+    </div>
+    <p class="note reportStatus" id="reportStatus" role="status"></p>
+  </section>
+
+  <section id="reportView" hidden>
+    <p class="hint">Spotted a mistake it didn’t fix, or a fix that was wrong? Paste it here. Reports stay on this
+      computer; export them to share with a developer (or Claude) so the rule can be added.</p>
+    <form id="reportForm">
+      <label class="field"><span>Page link</span>
+        <input type="url" id="rUrl" placeholder="https://www.reddit.com/r/…" autocomplete="off"></label>
+      <label class="field"><span>Text from the page <em>required</em></span>
+        <textarea id="rText" rows="3" required placeholder="e.g. “I think there going to win”"></textarea>
+        <button type="button" class="link small" id="useSelection" hidden>Use text selected on the page</button></label>
+      <div class="pair">
+        <label class="field"><span>Wrong word</span><input id="rWrong" placeholder="there" autocomplete="off"></label>
+        <label class="field"><span>Should be</span><input id="rRight" placeholder="they’re" autocomplete="off"></label>
+      </div>
+      <label class="field"><span>Kind</span>
+        <select id="rKind">
+          <option value="missed">It missed a mistake</option>
+          <option value="wrongfix">It changed something it shouldn’t have</option>
+          <option value="other">Other / explanation</option>
+        </select></label>
+      <label class="field"><span>Note <em>optional</em></span>
+        <textarea id="rNote" rows="2" placeholder="Why it’s wrong, or the rule it should follow"></textarea></label>
+      <label class="row" id="rTeachRow">
+        <input type="checkbox" id="rTeach">
+        <span><b>Teach it</b><small>Always change “Wrong word” to “Should be” from now on.</small></span>
+      </label>
+      <div class="formActions">
+        <span id="rStatus" class="status" role="status"></span>
+        <button type="submit" class="primary">Save report</button>
+      </div>
+    </form>
+    <h2>Saved reports <span><button class="link" id="exportReports">Export</button>
+      <button class="link" id="copyReports">Copy</button></span></h2>
+    <ul id="reportList" class="reports"></ul>
+  </section>
+
+  <section id="settingsView" hidden>
+    <h2>AI checker</h2>
+    <div class="seg" id="aiEngine" role="radiogroup">
+      <button data-v="off">Off</button>
+      <button data-v="nano">Chrome on-device</button>
+      <button data-v="ollama">Ollama app</button>
+    </div>
+    <p class="note" id="aiExplain"></p>
+    <div class="aiStatus" id="aiStatusRow" hidden>
+      <span class="statusDot" id="aiDot"></span><span id="aiStatus">Checking…</span>
+      <button class="link" id="aiAction" hidden></button>
+      <button class="link" id="aiTest" hidden>Test</button>
+    </div>
+    <p class="note" id="aiTestResult"></p>
+    <div id="ollamaFields" hidden>
+      <div class="pair wide">
+        <label class="field"><span>Address</span><input id="ollamaUrl" autocomplete="off"></label>
+        <label class="field"><span>Model</span><select id="ollamaModel"></select></label>
+      </div>
+    </div>
+    <label class="row" id="aiVerifyRow" hidden>
+      <input type="checkbox" id="aiVerify">
+      <span><b>Ask the AI before changing a word</b><small>Rule fixes wait a moment for the AI to agree.
+        Turn off to fix instantly and let the AI take back the ones it disagrees with.</small></span>
+    </label>
+    <label class="row" id="aiReadRow" hidden>
+      <input type="checkbox" id="aiRead">
+      <span><b>Let the AI read every paragraph</b><small>Catches slips the rules don’t know. The AI works in short
+        bursts with long rests, so the computer stays cool. Off: it only checks the rules’ own fixes.</small></span>
+    </label>
+    <label class="row" id="rememberRow" hidden>
+      <input type="checkbox" id="rememberAI">
+      <span><b>Remember the AI’s answers</b><small>So a page you come back to isn’t read again, which saves heat and
+        waiting. Kept on this computer only: the changed words and a few words around them, at most 1,000 paragraphs,
+        for 30 days. Turning this off deletes them.</small></span>
+    </label>
+
+    <h2>Fix these kinds of mistakes</h2>
+    <div id="catToggles"></div>
+
+    <h2>Casual spellings <small class="hint">dont, ive, im, would of, alot</small></h2>
+    <div class="seg" id="casualMode" role="radiogroup">
+      <button data-v="auto">Leave in casual writing</button>
+      <button data-v="fix">Always fix</button>
+      <button data-v="never">Never fix</button>
+    </div>
+    <p class="note" id="casualExplain"></p>
+
+    <h2>Your spelling <small class="hint">color → colour</small></h2>
+    <div class="seg" id="region" role="radiogroup">
+      <button data-v="off">As written</button>
+      <button data-v="us">US</button>
+      <button data-v="uk">UK</button>
+      <button data-v="ca">Canada</button>
+      <button data-v="au">Australia</button>
+    </div>
+    <p class="note" id="regionExplain"></p>
+
+    <h2>Marks on changed words</h2>
+    <div class="seg" id="marks" role="radiogroup">
+      <button data-v="underline"><span class="pv pv-underline">word</span>Underline</button>
+      <button data-v="squiggle"><span class="pv pv-squiggle">word</span>Squiggle above</button>
+      <button data-v="none"><span class="pv">word</span>None</button>
+    </div>
+
+    <h2>When you hover a changed word</h2>
+    <div class="seg" id="hover" role="radiogroup">
+      <button data-v="card">Detailed card</button>
+      <button data-v="compact">Word only</button>
+    </div>
+    <p class="note" id="hoverExplain"></p>
+
+    <h2>Never-change list <button class="link" id="clearIgnored">Clear</button></h2>
+    <form class="addRow" id="ignoreForm">
+      <input id="ignoreInput" placeholder="word, or wrong → right" autocomplete="off">
+      <button type="submit">Add</button>
+    </form>
+    <ul id="ignoredList" class="ignored"></ul>
+
+    <h2>Learned fixes <span class="count" id="learnedCount"></span></h2>
+    <p class="note">Fixes the AI keeps finding are learned and then applied instantly, even with the AI off.
+      You can teach your own too.</p>
+    <form class="addRow" id="learnForm">
+      <input id="learnInput" placeholder="wrong → right, e.g. wierd → weird" autocomplete="off">
+      <button type="submit">Add</button>
+    </form>
+    <ul id="learnedList" class="ignored"></ul>
+
+    <h2>Borrowed word lists</h2>
+    <div class="listRow">
+      <span><b>Wikipedia common misspellings</b><small id="wikiStatus">About 4,000 misspellings collected by Wikipedia editors.</small></span>
+      <button class="link" id="wikiImport">Add</button>
+    </div>
+
+    <h2>Turned off on</h2>
+    <ul id="sitesList" class="ignored"></ul>
+    <h2>Diagnostics</h2>
+    <label class="row">
+      <input type="checkbox" id="keepLog">
+      <span><b>Keep a debug log</b><small>Logs every decision on this computer (each fix made or skipped, and why),
+        with bits of the page and its address, so a report can show what went wrong. Turning it off deletes it.</small></span>
+    </label>
+    <div class="diag">
+      <button class="primary" id="copyTrace">Copy report for this page</button>
+      <button class="link" id="downloadTrace">Save full log</button>
+      <button class="link" id="clearTrace">Clear</button>
+    </div>
+    <p class="note" id="traceStatus" role="status"></p>
+
+    <h2>Backup</h2>
+    <p class="note">Keep your lists and settings when reinstalling or moving to another computer.</p>
+    <button class="link" id="openBackup" style="padding-left:0">Back up or restore…</button>
+
+    <h2>History</h2>
+    <button class="danger" id="clearLog">Clear correction history</button>
+  </section>
+
+  <script src="policy.js"></script>
+  <script src="engine.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

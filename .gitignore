@@ -1,0 +1,7 @@
+# Personal data: popup backups
+*backup-*.json
+# Changes on every edit (dev auto-reload stamp)
+build.txt
+# Local tooling
+.claude/
+.DS_Store

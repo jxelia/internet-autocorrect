@@ -1,0 +1,66 @@
+{
+  "manifest_version": 3,
+  "name": "Internet Autocorrect",
+  "version": "1.8.2",
+  "description": "Quietly fixes misspellings, typos and mixed-up words (their/there/they're) on the pages you read.",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "offscreen",
+    "downloads",
+    "scripting"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "policy.js",
+        "engine.js",
+        "copyfix.js",
+        "content.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "copyfix.js",
+        "clipboard.js"
+      ],
+      "world": "MAIN",
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Internet Autocorrect",
+    "default_icon": {
+      "16": "icons/16.png",
+      "32": "icons/32.png",
+      "48": "icons/48.png",
+      "128": "icons/128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/16.png",
+    "32": "icons/32.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  },
+  "options_ui": {
+    "page": "backup.html",
+    "open_in_tab": true
+  }
+}
