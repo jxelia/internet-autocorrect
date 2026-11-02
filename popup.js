@@ -292,6 +292,7 @@ function renderSettings() {
   $('aiReadRow').hidden = s.ai.engine === 'off';
   $('aiRead').checked = !!s.ai.read;
   $('rememberRow').hidden = s.ai.engine === 'off';
+  if (s.ai.engine === 'off') $('rememberWarn').hidden = true;
   $('rememberAI').checked = s.rememberAI === true;
   $('keepLog').checked = s.keepLog === true;
   if (document.activeElement !== $('ollamaUrl')) $('ollamaUrl').value = s.ai.url;
@@ -586,7 +587,22 @@ $('aiEngine').addEventListener('click', async (e) => {
 });
 $('aiVerify').addEventListener('change', (e) => saveSettings({ ai: { ...state.settings.ai, verify: e.target.checked } }));
 $('aiRead').addEventListener('change', (e) => saveSettings({ ai: { ...state.settings.ai, read: e.target.checked } }));
-$('rememberAI').addEventListener('change', (e) => saveSettings({ rememberAI: e.target.checked }));
+$('rememberAI').addEventListener('change', (e) => {
+  // Turning it off deletes the answers, so it stays on until the warning is answered.
+  if (e.target.checked) {
+    $('rememberWarn').hidden = true;
+    saveSettings({ rememberAI: true });
+  } else {
+    e.target.checked = true;
+    $('rememberWarn').hidden = false;
+  }
+});
+$('rememberKeep').addEventListener('click', () => { $('rememberWarn').hidden = true; });
+$('rememberOff').addEventListener('click', () => {
+  $('rememberWarn').hidden = true;
+  $('rememberAI').checked = false;
+  saveSettings({ rememberAI: false });
+});
 $('keepLog').addEventListener('change', (e) => saveSettings({ keepLog: e.target.checked }));
 $('ollamaUrl').addEventListener('change', async (e) => {
   await saveSettings({ ai: { ...state.settings.ai, url: e.target.value.trim() || AI_DEFAULTS.url } });
