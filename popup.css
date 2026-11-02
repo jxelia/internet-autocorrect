@@ -5,6 +5,7 @@
   --muted: #6b7280;
   --line: #e5e7eb;
   --frame: #ffffff;
+  --gap: var(--bg);
   --accent: #2563eb;
   --danger: #dc2626;
 }
@@ -16,6 +17,7 @@
     --muted: #9ca3af;
     --line: #2d313a;
     --frame: #4a505c;
+    --gap: #2a2e36;
     --accent: #60a5fa;
     --danger: #f87171;
   }
@@ -29,8 +31,8 @@ body {
   background: var(--bg);
   color: var(--text);
 }
-/* Inner border just inside the popup window, whose own frame Chrome draws (from Mute List for Reddit). Fixed, so it stays on the window's edge while the page scrolls. */
-body.popup::after { content: ""; position: fixed; inset: 3px; z-index: 10; border: 1px solid var(--frame); border-radius: 10px; pointer-events: none; }
+/* Inner border just inside the popup window, whose own frame Chrome draws (from Mute List for Reddit). Fixed, so it stays on the window's edge while the page scrolls. The shadow colours the strip between the line and the edge, corners included. */
+body.popup::after { content: ""; position: fixed; inset: 3px; z-index: 10; border: 1px solid var(--frame); border-radius: 10px; pointer-events: none; box-shadow: 0 0 0 10px var(--gap); }
 header {
   display: flex; align-items: center; justify-content: space-between;
   padding: 12px 14px 10px;

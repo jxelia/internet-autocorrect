@@ -1,14 +1,15 @@
 {
   "manifest_version": 3,
   "name": "Internet Autocorrect",
-  "version": "1.8.7",
+  "version": "1.8.8",
   "description": "Quietly fixes misspellings, typos and mixed-up words (their/there/they're) on the pages you read.",
   "permissions": [
     "storage",
     "activeTab",
     "offscreen",
     "downloads",
-    "scripting"
+    "scripting",
+    "contextMenus"
   ],
   "host_permissions": [
     "<all_urls>"
