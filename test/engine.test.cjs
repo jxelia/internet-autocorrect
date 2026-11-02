@@ -2,6 +2,42 @@ const { findCorrections } = require('./engine.cjs');
 const apply = (t) => { let out = '', last = 0; for (const f of findCorrections(t)) { out += t.slice(last, f.start) + f.replacement; last = f.end; } return out + t.slice(last); };
 const cases = [
   // [input, expected]
+  // The -ed lost before "to" (POLICY.md §2), first seen in a casual post on X.
+  ["This isn't some South Africa back in the day. You will get use to it. Sometimes you lose, bro.", "This isn't some South Africa back in the day. You will get used to it. Sometimes you lose, bro."],
+  ["I'm not use to this yet.", "I'm not used to this yet."],
+  ["We were so use to it.", "We were so used to it."],
+  ["I never really got use to the noise.", "I never really got used to the noise."],
+  ["She's getting use to the new job.", "She's getting used to the new job."],
+  ["What am I suppose to do?", "What am I supposed to do?"],
+  ["You're not suppose to touch that.", "You're not supposed to touch that."],
+  ["What's that suppose to mean?", "What's that supposed to mean?"],
+  ["It's suppose to rain tomorrow.", "It's supposed to rain tomorrow."],
+  ["Most of them are oppose to the plan.", "Most of them are opposed to the plan."],
+  ["He was expose to asbestos for years.", "He was exposed to asbestos for years."],
+  ["I am not accustom to this.", "I am not accustomed to this."],
+  ["I use to play this game every day.", "I used to play this game every day."],
+  ["It was fun, but we use to go there more.", "It was fun, but we used to go there more."],
+  // right as written
+  ["I didn't use to like it.", null],
+  ["Did you use to live here?", null],
+  ["It's of no use to me.", null],
+  ["It's no use to anyone.", null],
+  ["There was use to it after all.", null],
+  ["All you do is use to-do lists.", null],
+  ["All you have to do is use to get there.", null],
+  ["Its use to researchers is clear.", null],
+  ["It's use to researchers is clear.", null],
+  ["The team's use to the company was huge.", null],
+  ["Here's the app I use to edit photos.", null],
+  ["This is what we use to clean it.", null],
+  ["I use to-do lists daily.", null],
+  ["I suppose to some extent it's true.", null],
+  ["I oppose to a degree.", null],
+  ["Use to clean surfaces.", null],
+  ["We use to_date in the query.", null],
+  // talking about the words themselves
+  ["People write \"get use to\" when they mean \"get used to\".", null],
+  ["The phrase is get used to, but I keep seeing get use to as a spelling.", null],
   // From the first precision run on real comments (2026-11-03): each of these was changed wrongly.
   ["You must first type that in in order to get it.", null],
   ["We go all-in in CLIs now.", null],

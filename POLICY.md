@@ -71,6 +71,7 @@ doubt, leave it alone. A missed slip costs the reader a moment; a wrong "fix" co
 | Missing contraction apostrophe | dont, doesnt, im | The contraction is clearly meant |
 | Word form in a fixed frame | on a weekly bases → basis | Phraseology: *on a … basis* only takes the singular, and *bases* sounds almost the same. With *the*, only adjectives that go with *basis* count (*on the naval bases* is the plural of *base*). The AI never changes singular/plural on its own (*the analyses show* is right) |
 | Word form (over-regularisation) | fastly → fast, goed → went, has goed → has gone, eated → ate | The writer chose the right word and built it with the regular ending; the irregular form should have blocked it. Not a spelling mistake: *fastly* is spelt exactly as its parts say |
+| Lost *-ed* before *to* | get use to → used, I'm not use to → used, am I suppose to → supposed, is oppose to → opposed, I use to play → used | The *d* runs into the *t* and can't be heard, so the spelling follows the ear. Only the participle can stand after *be* or *get* here, so the sentence settles it. Right as written: *didn't use to*, *of no use to me*, *its use to researchers*, *the app I use to edit*, *I suppose to some extent*. Not a casual form, so register doesn't protect it |
 | Eggcorns (misheard phrases) | for all intensive purposes, case and point | The fixed phrase is well known; the misheard version isn't a deliberate variant |
 
 ### Word forms: how they are judged

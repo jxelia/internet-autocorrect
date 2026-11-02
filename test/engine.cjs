@@ -97,6 +97,15 @@
     placebo domino desired into lasting`);
   const EFFECT_PREV = S(`will would could can doesn't didn't don't won't not might may negatively
     positively directly really greatly seriously severely`);
+  // The -ed lost where its /d/ runs into "to": it can't be heard, so the spelling follows the ear (POLICY.md §2).
+  const ED_BEFORE_TO = { use: 'used', suppose: 'supposed', oppose: 'opposed', expose: 'exposed', accustom: 'accustomed' };
+  const BE_FORM = S(`am is are was were be been being isn't aren't wasn't weren't ain't isnt arent wasnt werent
+    i'm you're we're they're he's she's that's who's im youre theyre hes shes thats`);
+  const GET_FORM = S(`get gets got gotten getting become becomes became becoming grow grows grew grown growing`);
+  const ED_DEGREE = S(`not never so really pretty very quite already still just always finally slowly gradually
+    kinda sorta totally completely all`);
+  const BE_INVERTED = S(`what's whats how's hows where's why's`);
+  const SUBJECT_PRONOUN = S(`i you he she it we they this that these those`);
   const TOO_NEXT = S(`much many late early long big small hard easy far bad expensive cheap hot cold young
     old soon busy tired lazy slow fast good`);
   const TOO_PREV = S(`way far much is was it's its are were be been not getting that's thats i'm im
@@ -269,7 +278,28 @@
     return !p || CLAUSE_OPENER.has(p) || /^\s*[,;:(—–]/.test(c.after(i - 1));
   };
 
+  // "get use to it", "I'm not suppose to", "am I suppose to": only the participle can stand there.
+  // "didn't use to", "of no use to me", "all you do is use to..." are right, and a sentence's "I use X to" has no gap.
+  const edBeforeTo = (i, c) => {
+    const w = c.w(i);
+    if (c.next(i) !== 'to' || c.hyphenAfter(i + 1) || c.isAttachedAt(i + 1)) return null;
+    let j = i - 1, steps = 0;
+    while (steps < 3 && ED_DEGREE.has(c.prev(j + 1))) { j--; steps++; }
+    const p = c.prev(j + 1), p2 = c.prev(j + 1, 2);
+    const fixed = ED_BEFORE_TO[w];
+    const getTakesIt = w !== 'suppose' && w !== 'oppose'; // nobody "gets suppose to"
+    if (getTakesIt && GET_FORM.has(p)) return fixed;
+    if (BE_FORM.has(p) && p2 !== 'there' && !/^(do|did|does|doing)$/.test(p2)) return fixed;
+    if (w === 'suppose' && (p === "it's" || p === 'its')) return fixed; // not for "use": "its use to researchers"
+    if ((w === 'use' || w === 'suppose') && SUBJECT_PRONOUN.has(p) && (BE_FORM.has(p2) || BE_INVERTED.has(p2))) return fixed;
+    // "I use to play": with no earlier word for "use" to act on ("the app I use to play"), it can only be the habit
+    if (w === 'use' && steps === 0 && /^(i|we|they|he|she)$/.test(p) && c.next(i, 2) &&
+        (c.startBefore(i - 1) || /^(and|but|so|because|when)$/.test(c.prev(i - 1)))) return fixed;
+    return null;
+  };
+
   const RULES = {
+    use: edBeforeTo, suppose: edBeforeTo, oppose: edBeforeTo, expose: edBeforeTo, accustom: edBeforeTo,
     their(i, c) {
       const n = c.next(i), n2 = c.next(i, 2), p = c.prev(i);
       if (n && THERE_VERB.has(n)) return 'there';
@@ -491,12 +521,14 @@
     breath: S(`breath breathe`),
     to: S(`to too two`),
     choose: S(`chose choose`),
+    used: S(`use used suppose supposed`),
   };
   const RULE_GROUP = {
     their: 'there', "their's": 'there', there: 'there', "they're": 'there', your: 'your', "you're": 'your',
     its: 'its', "it's": 'its', then: 'then', than: 'then', loose: 'lose', lose: 'lose', affect: 'affect',
     effect: 'affect', where: 'where', were: 'where', whose: 'whose', "who's": 'whose', quite: 'quiet',
     quiet: 'quiet', breath: 'breath', to: 'to', too: 'to', of: 'of', chose: 'choose',
+    use: 'used', suppose: 'used',
   };
   const { META_WORDS, isQuoted } = P; // what quote marks are doing is decided in policy.js (POLICY.md §4)
   const LIST_SEP = /^\s*(\/|,|&|-|\bor\b|\band\b|\bvs\.?|\bversus\b)\s*$/i;
@@ -545,6 +577,7 @@
     const joined = (i) => i >= 0 && i < tokens.length - 1 && /^[ \t ]+$/.test(gap(i));
     return {
       w: (i) => tokens[i] && tokens[i].w,
+      isAttachedAt: (i) => !!tokens[i] && isAttached(text, tokens[i]),
       raw: (i) => tokens[i] && tokens[i].raw,
       next(i, k = 1) {
         let j = i;

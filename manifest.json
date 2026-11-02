@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Internet Autocorrect",
-  "version": "1.10.0",
+  "version": "1.10.1",
   "description": "Quietly fixes misspellings, typos and mixed-up words (their/there/they're) on the pages you read.",
   "permissions": [
     "storage",
