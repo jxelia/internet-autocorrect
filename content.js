@@ -39,6 +39,8 @@
   const BLOCK_SELECTOR = 'p,li,td,th,dd,dt,h1,h2,h3,h4,h5,h6,blockquote,figcaption,summary,caption,legend,' +
     'article,section,div,main,body';
   const EMPHASIS_SELECTOR = 'em,i,b,strong,q,mark,u,cite,dfn';
+  // What one writer wrote, on sites whose markup is known. Reddit: the text of a post or comment, without its replies.
+  const COMMENT_SELECTOR = '[id$="-rtjson-content"]';
   const HOLD_MS = 650;
   const MAX_AI_BLOCKS = 400;
 
@@ -332,6 +334,25 @@
     return { text, segs };
   }
 
+  // The writer's whole comment as originally written, to judge casual vs careful writing (POLICY.md §4). Quotes are
+  // someone else's words, so they don't count, and a paragraph inside one is judged alone. Null means use the paragraph.
+  function commentText(block) {
+    const box = block.closest(COMMENT_SELECTOR);
+    if (!box || block.closest('blockquote')) return null;
+    let text = '';
+    let last = null;
+    const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n && text.length <= 6000; n = walker.nextNode()) {
+      const parent = n.parentElement;
+      if (!parent || parent.closest(SKIP_SELECTOR) || parent.closest('blockquote')) continue;
+      const b = blockOf(n);
+      if (last && b !== last) text += '\n';
+      last = b;
+      text += origText(n);
+    }
+    return text;
+  }
+
   // A short <em>/<b>/<q> run on its own is usually a word being mentioned ("*their* is possessive").
   function isEmphasized(node) {
     const em = node.parentElement.closest(EMPHASIS_SELECTOR);
@@ -358,7 +379,7 @@
     if (host.length >= 2 && host[host.length - 2].length > 2) pageNames.add(host[host.length - 2].toLowerCase());
   }
 
-  function processNode(node, blockText) {
+  function processNode(node, blockText, registerText) {
     const existing = records.get(node);
     // Already done, but a fix still waiting for the AI means its paragraph needs (another) review: the page may
     // have moved this text into a new paragraph element, and the one we queued is gone.
@@ -370,7 +391,7 @@
     const fixes = findCorrections(data, {
       // emphasis is judged by what's around it (a mention is left alone, emphasis on a used word isn't); link text is a name
       blockText, emphasized: isShortLink(node), marked: isEmphasized(node) ? blockText.indexOf(node.data) : null,
-      extraSpelling: dict, casualMode: settings.casualMode,
+      extraSpelling: dict, casualMode: settings.casualMode, registerText,
       names: pageNames, regional,
       onDecision: (d) => trace({ kind: 'rule', rule: d.rule, original: d.original, replacement: d.replacement,
         verdict: d.verdict, why: d.why, context: around(data, d.start, d.end) }),
@@ -711,7 +732,7 @@
       res = await chrome.runtime.sendMessage({
         type: 'iac:proofread', cacheOnly: peek,
         req: {
-          text, url: location.href,
+          text, url: location.href, registerText: commentText(block),
           candidates: cands.map(({ seg, fix }) => ({
             original: fix.original, replacement: fix.replacement,
             ...P.sentenceAround(text, seg.start + fix.start, seg.start + fix.end, fix.replacement),
@@ -797,7 +818,8 @@
     const at = P.locate(text, edit);
     if (!at) return { why: 'could not find it in the paragraph' };
     const why = P.checkAiEdit(edit, { text, at, known: isKnownMisspelling, mentioned: (w) => isMentioned(text, w),
-      casualMode: settings.casualMode, names: pageNames });
+      casualMode: settings.casualMode, names: pageNames,
+      registerText: segs[0] ? commentText(blockOf(segs[0].node)) : null });
     if (why) return { why };
     const original = edit.original.trim();
     const replacement = edit.replacement.trim();
@@ -907,8 +929,9 @@
     }
     for (const [block, nodes] of blocks) {
       const text = texts.get(block);
+      const registerText = commentText(block);
       let any = false;
-      for (const n of nodes) if (processNode(n, text)) any = true;
+      for (const n of nodes) if (processNode(n, text, registerText)) any = true;
       if (undone.length) restoreUndone(nodes);
       if (any) scheduleReview(block);
     }

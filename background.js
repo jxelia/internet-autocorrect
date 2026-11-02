@@ -139,12 +139,12 @@ const withTimeout = (p, ms) => Promise.race([p, new Promise((r) => setTimeout(()
 
 // Judge everything the AI and the spellchecker proposed (policy.judgeEdit), ask the AI to confirm the
 // ones that need it, and keep a trace of every decision. Returns { edits, trace }.
-async function review(text, rawEdits, suggestions, ai, casualMode) {
+async function review(text, rawEdits, suggestions, ai, casualMode, registerText) {
   const dict = await dictionary();
   const isWord = (w) => dict.has(w);
   const P = IAC_Policy;
   const base = {
-    text, isWord, casualMode,
+    text, isWord, casualMode, registerText,
     known: (w) => self.IAC_Engine.isKnownMisspelling(w),
     mentioned: (w) => self.IAC_Engine.isMentioned(text, w),
   };
@@ -408,7 +408,7 @@ async function proofread(req, cacheOnly = false) {
   const ai = await aiSettings();
   const { casualMode = 'auto' } = await chrome.storage.sync.get('casualMode');
   const key = hashKey(JSON.stringify([req.text, req.candidates.map((c) => c.original + '→' + c.replacement),
-    ai.engine, ai.model || '', !!ai.read, casualMode, await logicVersion()]));
+    ai.engine, ai.model || '', !!ai.read, casualMode, req.registerText || '', await logicVersion()]));
   const hit = (await keepAnswers()) ? (await loadCache()).get(key) : null;
   // A paragraph the model couldn't answer is remembered too, so a revisit doesn't wait again; retried after a while.
   if (hit && !(hit.res.noAnswer && Date.now() - hit.t > NO_ANSWER_RETRY_MS)) return { ...hit.res, cached: true };
@@ -493,7 +493,7 @@ async function pump() {
       if (res && res.error === 'timeout') await resetAI();
       if (res && res.ok && res.result) {
         const { casualMode = 'auto' } = await chrome.storage.sync.get('casualMode');
-        const out = await review(job.req.text, res.result.edits, suggestions, ai, casualMode);
+        const out = await review(job.req.text, res.result.edits, suggestions, ai, casualMode, job.req.registerText);
         res.result.edits = out.edits;
         res.result.trace = out.trace;
         remember(job.key, res);

@@ -206,5 +206,24 @@ for (const [inp, exp] of cases) {
   // off: nothing changes
   if (apply('The color of the center.') === 'The color of the center.') pass++; else { fail++; console.log('FAIL: region off changed text'); }
 }
+// Register from the whole comment, not the paragraph (POLICY.md §4)
+{
+  const conv = (t, registerText) => { let out = '', last = 0; for (const f of findCorrections(t, { registerText })) { out += t.slice(last, f.start) + f.replacement; last = f.end; } return out + t.slice(last); };
+  const wholeCases = [
+    // careful-looking paragraph, casual writer: left alone
+    ["I dont know why. It's strange; nobody explained it.", "lol ngl i dont care tbh\nI dont know why. It's strange; nobody explained it.", null],
+    // on its own the same paragraph is fixed
+    ["I dont know why. It's strange; nobody explained it.", undefined, "I don't know why. It's strange; nobody explained it."],
+    // the writer shows they know the standard form in another paragraph
+    ["I would of stayed longer, honestly", "I would've gone, but it was late.\nI would of stayed longer, honestly", "I would have stayed longer, honestly"],
+    ["I would of stayed longer, honestly", undefined, null],
+    // ordinary slips don't depend on register
+    ["i definately agree lol", "lol ngl i dont care tbh\ni definately agree lol", "i definitely agree lol"],
+  ];
+  for (const [inp, whole, exp] of wholeCases) {
+    const got = conv(inp, whole); const want = exp === null ? inp : exp;
+    if (got === want) pass++; else { fail++; console.log('FAIL (whole comment)\n  in:   ' + inp + '\n  got:  ' + got + '\n  want: ' + want); }
+  }
+}
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

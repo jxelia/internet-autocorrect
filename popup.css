@@ -1,9 +1,10 @@
 :root {
-  --bg: #ffffff;
-  --panel: #f6f7f9;
+  --bg: #f5f6f8;
+  --panel: #eceef2;
   --text: #111827;
   --muted: #6b7280;
   --line: #e5e7eb;
+  --frame: #ffffff;
   --accent: #2563eb;
   --danger: #dc2626;
 }
@@ -14,6 +15,7 @@
     --text: #f3f4f6;
     --muted: #9ca3af;
     --line: #2d313a;
+  --frame: #2d313a;
     --accent: #60a5fa;
     --danger: #f87171;
   }
@@ -28,7 +30,7 @@ body {
   color: var(--text);
 }
 /* Inner border just inside the popup window, whose own frame Chrome draws (from Mute List for Reddit). Fixed, so it stays on the window's edge while the page scrolls. */
-body.popup::after { content: ""; position: fixed; inset: 3px; z-index: 10; border: 1px solid var(--line); border-radius: 10px; pointer-events: none; }
+body.popup::after { content: ""; position: fixed; inset: 3px; z-index: 10; border: 1px solid var(--frame); border-radius: 10px; pointer-events: none; }
 header {
   display: flex; align-items: center; justify-content: space-between;
   padding: 12px 14px 10px;
