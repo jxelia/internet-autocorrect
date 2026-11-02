@@ -1031,7 +1031,7 @@
       if (!seg || text.slice(e.start, e.end) !== e.original) continue; // spans a link or bold run, or the text changed
       const rec = ensureRecord(seg.node);
       const start = e.start - seg.start;
-      const f = { start, end: start + e.original.length, original: e.original, replacement: matchCase(e.original, e.replacement),
+      const f = { start, end: start + e.original.length, original: e.original, replacement: e.replacement, // the model's own capitals: "I stead" -> "instead"
         category: categoryOf(e.type), rule: 'ai', source: 'ai', via: 'asked', reason: '', chosen: true };
       f.state = wasUndone(seg.node, f) ? 'reverted' : 'on';
       if (addFix(seg.node, rec, f)) { touched.add(seg.node); placed++; }
@@ -1049,14 +1049,13 @@
 
   async function fixComment(blocks) {
     let placed = 0, failed = null;
-    const asking = blocks.filter((b) => !commentChoices[choiceKey(blockSegments(b).text)]?.edits);
-    if (asking.length) toast('Fixing this comment…', 0);
+    toast('Fixing this comment…', 0);
     for (const block of blocks) {
       const { text } = blockSegments(block);
       if (!/[A-Za-z]{2}/.test(text)) continue;
       const had = commentChoices[choiceKey(text)];
       if (had?.left) { setChoice(text, null); enqueue(block); } // takes back "leave as written"
-      if (had?.edits) { placed += placeAsked(block, had.edits); continue; }
+      if (had?.edits) placed += placeAsked(block, had.edits);
       let res;
       try {
         res = await chrome.runtime.sendMessage({ type: 'iac:restore', req: { text, url: location.href } });
@@ -1065,13 +1064,17 @@
       }
       if (!active) return;
       if (!res?.ok) { failed = res?.error || 'no reply'; continue; }
-      if (res.edits.length) {
-        setChoice(text, { edits: res.edits });
+      // Asking again keeps what was fixed and adds what this answer found on top (the model varies from run to run).
+      const kept = had?.edits || [];
+      const fresh = res.edits.filter((e) => !kept.some((k) => e.start < k.end && e.end > k.start));
+      if (fresh.length) {
+        setChoice(text, { edits: [...kept, ...fresh] });
         unwatch(block);
-        placed += placeAsked(block, res.edits);
+        placed += placeAsked(block, fresh);
       }
     }
-    toast(placed ? `Fixed ${placed} ${placed === 1 ? 'place' : 'places'}`
+    toast(placed && failed ? `Fixed ${placed} ${placed === 1 ? 'place' : 'places'}; the AI gave no answer for the rest, so try again`
+      : placed ? `Fixed ${placed} ${placed === 1 ? 'place' : 'places'}`
       : failed === 'off' ? 'Turn on an AI checker in Settings first'
       : failed === 'ollama' ? 'The AI checker is set to Ollama, which isn’t running'
       : failed === 'timeout' ? 'The AI took too long' : failed ? `The AI gave no answer (${failed})` : 'The AI found nothing to fix');

@@ -460,6 +460,7 @@ async function pump() {
   if (running) return;
   running = true;
   while (queue.length) {
+    if (askedRunning) { await new Promise((r) => setTimeout(r, 500)); continue; }
     // Newest first (what the reader is looking at now), and paragraphs with a rule fix waiting for the AI before
     // scan-only ones: only the waiting fixes show as "Checking with the AI".
     let i = queue.length - 1, waiting = false;
@@ -490,7 +491,7 @@ async function pump() {
       const call = toAI({ type: 'proofread', ai, req: { ...job.req, hints } });
       const res = await withTimeout(call, AI_LIMIT_MS);
       // Too slow: the model may be stuck (a stuck on-device session slows every later call), so start it afresh.
-      if (res && res.error === 'timeout') await resetAI();
+      if (res && res.error === 'timeout' && !askedRunning) await resetAI();
       if (res && res.ok && res.result) {
         const { casualMode = 'auto' } = await chrome.storage.sync.get('casualMode');
         const out = await review(job.req.text, res.result.edits, suggestions, ai, casualMode, job.req.registerText);
@@ -514,6 +515,7 @@ async function pump() {
 // ---------------------------------------------------------------- right-click: fix or leave one comment
 // The reader decides per comment (POLICY.md §5). Their choice is kept by a hash of each paragraph, so it holds on
 // every visit: { left: true } or { edits } (the changed words only).
+let askedRunning = 0;
 const RESTORE_LIMIT_MS = 90000; // the reader asked and is waiting; a paragraph this broken takes a small model a while
 const MAX_CHOICES = 1000;
 
@@ -521,7 +523,17 @@ async function restoreParagraph(req) {
   const ai = await aiSettings();
   if (ai.engine === 'off') return { ok: false, error: 'off' };
   const dict = await dictionary();
-  const res = await withTimeout(toAI({ type: 'restore', ai, text: req.text }), RESTORE_LIMIT_MS);
+  // The reader is waiting: the reading queue pauses, and its timeouts can't close the model underneath this call.
+  askedRunning++;
+  let res;
+  try {
+    res = await withTimeout(toAI({ type: 'restore', ai, text: req.text }), RESTORE_LIMIT_MS);
+    if (res?.error === 'timeout') await resetAI();
+  } catch (e) {
+    res = { ok: false, error: String(e.message || e) };
+  } finally {
+    askedRunning--;
+  }
   if (!res || !res.ok) {
     appendTrace([{ t: Date.now(), url: req.url, kind: 'ai', verdict: 'asked: no answer', why: res?.error || 'no reply', text: req.text.slice(0, 300) }]);
     return { ok: false, error: ai.engine === 'ollama' && /fetch/i.test(res?.error || '') ? 'ollama' : res?.error || 'no reply' };

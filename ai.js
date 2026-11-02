@@ -15,7 +15,8 @@
  */
 'use strict';
 
-const POLICY = (typeof IAC_Policy !== 'undefined' ? IAC_Policy : require('./policy.cjs')).PROMPT_POLICY;
+const Policy = typeof IAC_Policy !== 'undefined' ? IAC_Policy : require('./policy.cjs');
+const POLICY = Policy.PROMPT_POLICY;
 
 const FIND_PROMPT = `You proofread one paragraph that someone is READING on a website.
 ${POLICY}
@@ -212,7 +213,10 @@ async function confirm(items, ai) {
 
 async function restore(text, ai) {
   const ask = ai.engine === 'ollama' ? ollamaAsk : nanoAsk;
-  const r = await ask(RESTORE_PROMPT, `Paragraph:\n<<<\n${text}\n>>>\n\nReply with JSON only.`, RESTORE_SCHEMA, ai);
+  const lost = Policy.missingLetters(text);
+  const hint = lost.length ? `The letters ${lost.join(', ')} almost never appear in this paragraph, so they are probably what went missing. ` +
+    'Put them back wherever a word is broken or looks wrong, also at the start or end of a word.\n\n' : '';
+  const r = await ask(RESTORE_PROMPT, `Paragraph:\n<<<\n${text}\n>>>\n\n${hint}Reply with JSON only.`, RESTORE_SCHEMA, ai);
   return typeof r.text === 'string' ? r.text : '';
 }
 

@@ -917,6 +917,17 @@
     return out;
   }
 
+  // Common letters a long paragraph (almost) never uses, when there are several: they are probably what went missing
+  // (a stuck key, or the space bar hit instead of the bottom row). Only a hint for the model when the reader asks for a fix.
+  function missingLetters(text) {
+    const all = text.toLowerCase().replace(/[^a-z]/g, '');
+    if (all.length < 100) return [];
+    const count = (ch) => all.split(ch).length - 1;
+    // less common letters must be absent; common ones may survive once ("spelling" kept its n)
+    const lost = [...'abcdefghilmnoprstuwy'].filter((ch) => count(ch) <= ('bfgpwy'.includes(ch) ? 0 : 1));
+    return lost.length >= 2 ? lost : [];
+  }
+
   // ---------------------------------------------------------------- the policy, in words, for the AI
 
   const PROMPT_POLICY = `Your job is to restore what the writer MEANT to write when they slipped. You are not an editor
@@ -947,7 +958,7 @@ These are DELIBERATE and must be left alone:
     splitEdit, classify, worthChecking, CONFUSABLE, casualForm, knowsStandard, registerOf, allowCasualFix,
     sentenceAround, spellSuggestions, mechanism, judgeEdit, alternatives, keyboardSlip, confusionPair,
     articleFor, wordForm, isWordForm, frameForm, nameReason, namesIn, isTitleCase, KNOWN_NAMES, REGULARISED, FLAT_ADVERBS,
-    restoredEdits, regionalTable, regionalReason, REGION_NAME, varietyName, isQuoted, mentionReason, META_WORDS, capsStyle,
+    restoredEdits, missingLetters, regionalTable, regionalReason, REGION_NAME, varietyName, isQuoted, mentionReason, META_WORDS, capsStyle,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.IAC_Policy = api;

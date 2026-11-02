@@ -118,5 +118,10 @@ for (const [text, corrected, want] of [
   if (placed && JSON.stringify(list) === JSON.stringify(want)) pass++;
   else { fail++; console.log(`FAIL restoredEdits ${text.slice(0, 30)}: ${JSON.stringify(list)}, wanted ${JSON.stringify(want)}`); }
 }
+const LOST = 'I m at a loss to u derst a d why auto  orre t has t ee updated to  orre t for spelling g  istakes  aused y people with thi k thu  s hitti g the spa e  at I stead of the keys o the  otto  row of the key oard.';
+for (const [text, want] of [[LOST, 'bcmn'], [JOKE1, ''], ['The quick brown fox jumps over the lazy dog and then the whole pack of very clever hounds gives chase across the wide open field.', '']]) {
+  const got = P.missingLetters(text).join('');
+  if (got === want) pass++; else { fail++; console.log(`FAIL missingLetters ${text.slice(0, 30)}: ${got}, wanted ${want}`); }
+}
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
