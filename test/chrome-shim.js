@@ -101,7 +101,7 @@ window.__iacTest = true;
         }
       },
       onMessage: { addListener: (fn) => msgListeners.push(fn) },
-      getManifest: () => ({ version: '1.0.0' }),
+      getManifest: () => ({ version: '1.0.0', permissions: ['downloads'] }),
     },
     tabs: {
       query: async () => [{ id: 1, url: location.href }],

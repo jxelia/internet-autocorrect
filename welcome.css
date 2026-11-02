@@ -1,0 +1,18 @@
+html, body { width: auto; height: auto; }
+body { margin: 0; background: var(--bg); color: var(--text); font-size: 15px; line-height: 1.5; }
+.page { max-width: 34rem; margin: 0 auto; padding: 3.5rem 16px; }
+.mark { display: block; margin-bottom: 12px; }
+h1 { margin: 0 0 6px; font-size: 26px; font-weight: 600; }
+h2 { margin: 26px 0 4px; font-size: 15px; font-weight: 600; }
+p { margin: 0; }
+.lead { color: var(--muted); }
+.kinds { list-style: none; margin: 22px 0 0; padding: 0; }
+.kinds li { display: grid; grid-template-columns: 4px 7rem 1fr; gap: 10px; align-items: center; padding: 7px 0; }
+.kinds b { font-weight: 500; }
+.kinds span:last-child { color: var(--muted); }
+.bar { height: 18px; border-radius: 2px; }
+.bar.wrongword { background: #2563eb; }
+.bar.spelling { background: #dc2626; }
+.bar.typo { background: #d97706; }
+.ai { margin-top: 12px; }
+.ai .note { margin: 8px 0 0; padding: 0; background: none; color: var(--muted); }

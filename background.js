@@ -248,9 +248,9 @@ function appendTrace(entries) {
   });
 }
 
-// ---------------------------------------------------------------- reports (Send report to Claude)
-// A report is this page's decision trace plus settings. "Send" saves it to a fixed folder in Downloads that
-// Claude reads when told "check the latest report" (see CLAUDE.md); nothing leaves the computer.
+// ---------------------------------------------------------------- reports
+// A report is this page's decision trace plus settings. "Save" puts it in a fixed folder in Downloads; nothing leaves
+// the computer. Only the unpacked copy can save (package.sh takes out the downloads permission); anyone can copy one.
 
 const REPORT_DIR = 'internet-autocorrect-reports';
 
@@ -476,6 +476,32 @@ const REST_MAX_MS = 90000;
 const AI_LIMIT_MS = 15000;
 let restUntil = 0;
 
+// A computer whose model can't keep up: after SLOW_CALLS timeouts in a row the reading pass stops for a while (longer
+// each time, starting at READ_PAUSE_MS), so it can't run hot for nothing. Questions about rule fixes still go, and an
+// answer to a reading call ends the pause for good. Kept in storage.session: it outlasts the worker, not the browser.
+const SLOW_CALLS = 3;
+const READ_PAUSE_MS = 30 * 60000;
+const READ_PAUSE_MAX_MS = 4 * 3600000;
+async function noteAiOutcome(res, find) {
+  const { readPause: p = { slow: 0, pauses: 0, until: 0 } } = await chrome.storage.session.get('readPause');
+  if (res?.ok) {
+    if (find) await chrome.storage.session.set({ readPause: { slow: 0, pauses: 0, until: 0 } });
+    return;
+  }
+  if (res?.error !== 'timeout' && res?.error !== 'model not ready') return;
+  p.slow++;
+  if (p.slow >= SLOW_CALLS) {
+    p.until = Date.now() + Math.min(READ_PAUSE_MS * 2 ** p.pauses, READ_PAUSE_MAX_MS);
+    p.pauses++;
+    p.slow = 0;
+  }
+  await chrome.storage.session.set({ readPause: p });
+}
+async function readingPaused() {
+  const { readPause } = await chrome.storage.session.get('readPause');
+  return !!readPause && Date.now() < readPause.until;
+}
+
 async function pump() {
   if (running) return;
   running = true;
@@ -499,7 +525,7 @@ async function pump() {
       const isWord = (w) => dict.has(w);
       // The read-everything pass only when the reader turned it on (it's what keeps the model busy and the computer
       // warm); otherwise the AI only answers the rules' own questions.
-      const find = !!ai.read && IAC_Policy.worthChecking(job.req.text, isWord);
+      const find = !!ai.read && !(await readingPaused()) && IAC_Policy.worthChecking(job.req.text, isWord);
       if (!find && !job.req.candidates.length) { finish(job, { ok: true, result: { checks: [], edits: [] }, skipped: true }); continue; }
       job.req.find = find;
       const suggestions = find ? IAC_Policy.spellSuggestions(job.req.text, isWord, {
@@ -509,6 +535,7 @@ async function pump() {
       const hints = await getHints();
       const t0 = Date.now();
       const res = await timedAI({ type: 'proofread', ai, req: { ...job.req, hints } }, AI_LIMIT_MS);
+      await noteAiOutcome(res, find);
       if (res?.ok) appendTrace([{ t: Date.now(), url: job.req.url, kind: 'ai', verdict: 'answered', ms: Date.now() - t0, find, text: job.req.text.slice(0, 80) }]);
       if (res && res.ok && res.result) {
         const { casualMode = 'auto' } = await chrome.storage.sync.get('casualMode');
@@ -694,7 +721,25 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
 // Chrome doesn't put a new version's content scripts into tabs that are already open, and the old ones are cut
 // off (content.js notices within a couple of seconds and undoes itself). Inject the new version so open tabs
 // keep working without a refresh.
-chrome.runtime.onInstalled.addListener(() => setTimeout(injectIntoOpenTabs, 3000));
+chrome.runtime.onInstalled.addListener(({ reason }) => {
+  setTimeout(injectIntoOpenTabs, 3000);
+  syncCopyScript();
+  if (reason === 'install') chrome.tabs.create({ url: chrome.runtime.getURL('welcome.html') });
+});
+
+// Corrected copies (clipboard.js) run inside the page, so they're only registered when the reader turned them on.
+const COPY_SCRIPT = 'iac-copies';
+async function syncCopyScript() {
+  const { fixCopies } = await chrome.storage.sync.get('fixCopies');
+  const found = await chrome.scripting.getRegisteredContentScripts({ ids: [COPY_SCRIPT] });
+  if (fixCopies && !found.length) {
+    await chrome.scripting.registerContentScripts([{ id: COPY_SCRIPT, matches: ['<all_urls>'], js: ['copyfix.js', 'clipboard.js'],
+      world: 'MAIN', runAt: 'document_start' }]);
+  } else if (!fixCopies && found.length) {
+    await chrome.scripting.unregisterContentScripts({ ids: [COPY_SCRIPT] });
+  }
+}
+chrome.storage.onChanged.addListener((changes, area) => { if (area === 'sync' && changes.fixCopies) syncCopyScript(); });
 async function injectIntoOpenTabs() {
   const scripts = chrome.runtime.getManifest().content_scripts || [];
   for (const tab of await chrome.tabs.query({ url: ['http://*/*', 'https://*/*'] })) {

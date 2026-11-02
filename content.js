@@ -28,6 +28,7 @@
     hover: 'card', // card | compact
     casualMode: 'auto', // auto | fix | never — casual spellings like "dont", "ive", "would of" (POLICY.md §4)
     region: 'off', // off | us | uk | ca | au — show other regions' spellings in this one (POLICY.md §7)
+    fixCopies: false, // correct what sites' own Copy buttons copy (clipboard.js)
     ai: AI_DEFAULTS,
   };
 
@@ -379,6 +380,9 @@
     if (host.length >= 2 && host[host.length - 2].length > 2) pageNames.add(host[host.length - 2].toLowerCase());
   }
 
+  // The language the page says this text is in (POLICY.md §4, What language is this).
+  const pageLangOf = (el) => el.closest('[lang]')?.getAttribute('lang') || '';
+
   function processNode(node, blockText, registerText) {
     const existing = records.get(node);
     // Already done, but a fix still waiting for the AI means its paragraph needs (another) review: the page may
@@ -391,7 +395,7 @@
     const fixes = findCorrections(data, {
       // emphasis is judged by what's around it (a mention is left alone, emphasis on a used word isn't); link text is a name
       blockText, emphasized: isShortLink(node), marked: isEmphasized(node) ? blockText.indexOf(node.data) : null,
-      extraSpelling: dict, casualMode: settings.casualMode, registerText,
+      extraSpelling: dict, casualMode: settings.casualMode, registerText, pageLang: pageLangOf(node.parentElement),
       names: pageNames, regional,
       onDecision: (d) => trace({ kind: 'rule', rule: d.rule, original: d.original, replacement: d.replacement,
         verdict: d.verdict, why: d.why, context: around(data, d.start, d.end) }),
@@ -474,6 +478,7 @@
   // copies from its own data comes out corrected too. Selections already carry the fixes.
   let publishTimer = null;
   function publishFixes() {
+    if (!settings.fixCopies) return;
     clearTimeout(publishTimer);
     publishTimer = setTimeout(() => {
       document.dispatchEvent(new CustomEvent('iac-fixes', { detail: JSON.stringify(active ? liveFixes() : []) }));
@@ -498,7 +503,7 @@
   // Copy buttons that copy through a hidden or read-only text box: the box holds the page's own text.
   document.addEventListener('copy', (e) => {
     const el = e.target instanceof Element ? e.target : document.activeElement;
-    if (!active || !el || !/^(TEXTAREA|INPUT)$/.test(el.tagName) || !e.clipboardData) return;
+    if (!active || !settings.fixCopies || !el || !/^(TEXTAREA|INPUT)$/.test(el.tagName) || !e.clipboardData) return;
     const r = el.getBoundingClientRect();
     const hidden = el.readOnly || r.width < 2 || r.height < 2 || r.bottom < 0 || r.right < 0 ||
       r.top > window.innerHeight || r.left > window.innerWidth;
@@ -695,7 +700,8 @@
       return;
     }
     const words = (text.match(/[A-Za-z]{2,}/g) || []).length;
-    const skip = words < 4 || text.length > 4000 || aiBlocksSent >= MAX_AI_BLOCKS;
+    const foreign = P.notEnglishReason(text, pageLangOf(block));
+    const skip = foreign || words < 4 || text.length > 4000 || aiBlocksSent >= MAX_AI_BLOCKS;
     if (peek && skip) return; // decided when it scrolls into view
     if (!peek) blockState.set(block, { sig: text, status: 'sent' });
     if (skip) {
@@ -703,7 +709,7 @@
       const waiting = all.some(({ node }) => records.get(node)?.fixes.some((f) => f.state === 'pending'));
       if (waiting) {
         trace({ kind: 'paragraph', pid: hash(text), text: text.slice(0, 300), skipped: true,
-          why: words < 4 ? 'too short for the AI' : text.length > 4000 ? 'too long for the AI' : 'AI limit for this page reached' });
+          why: foreign || (words < 4 ? 'too short for the AI' : text.length > 4000 ? 'too long for the AI' : 'AI limit for this page reached') });
       }
       blockState.set(block, { sig: text, status: 'done' });
       settlePending(all);
@@ -1128,7 +1134,7 @@
     send({ type: 'iac:trace', entries });
   }
 
-  // "Report" on the hover card: mark the fix as wrong and save this page's report for Claude.
+  // "Report" on the hover card (unpacked copy only): mark the fix as wrong and save this page's report.
   async function sendReport(fix) {
     const hit = byId.get(fix.id);
     const rec = hit && records.get(hit.node);
@@ -1481,7 +1487,7 @@
         <div class="cat"><span class="dot"></span><span class="label"></span><span class="ai"></span></div>
         <div class="change"><svg class="globe" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Your spelling"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20"/></svg><span class="from"></span><span class="arrow">→</span><span class="to"></span></div>
         <div class="reason"></div>
-        <div class="actions"><button class="undo">Undo</button><button class="ignore">Never change this</button><button class="report" title="Mark this fix as wrong and send this page's report to Claude">Report</button></div>
+        <div class="actions"><button class="undo">Undo</button><button class="ignore">Never change this</button>${chrome.runtime.getManifest().permissions?.includes('downloads') ? '<button class="report" title="Mark this fix as wrong and save this page\'s report">Report</button>' : ''}</div>
       </div>
       <div class="box" role="button" aria-label="Click to undo, hold to never change this">
         <div class="inner"></div><span class="word"></span><svg class="globe" style="width:14px;height:14px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Your spelling"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20"/></svg>
@@ -1501,12 +1507,12 @@
       if (tipFix) neverChange(tipFix);
       hideTip();
     });
-    tipRoot.querySelector('.report').addEventListener('click', async (e) => {
+    tipRoot.querySelector('.report')?.addEventListener('click', async (e) => {
       const btn = e.currentTarget;
       if (!tipFix) return;
-      btn.textContent = 'Sending…';
+      btn.textContent = 'Saving…';
       const res = await sendReport(tipFix);
-      btn.textContent = res && res.ok ? 'Sent to Downloads ✓' : 'Couldn’t send';
+      btn.textContent = res && res.ok ? 'Saved to Downloads ✓' : 'Couldn’t save';
       setTimeout(() => { btn.textContent = 'Report'; hideTip(); }, 1400);
     });
 

@@ -9,6 +9,7 @@ const DEFAULTS = {
   hover: 'card',
   casualMode: 'auto',
   rememberAI: false,
+  fixCopies: false,
   keepLog: false,
   region: 'off',
   ai: { engine: 'off', verify: true, read: true, url: 'http://localhost:11434', model: '' },
@@ -298,6 +299,7 @@ function renderSettings() {
   $('rememberRow').hidden = s.ai.engine === 'off';
   if (s.ai.engine === 'off') $('rememberWarn').hidden = true;
   $('rememberAI').checked = s.rememberAI === true;
+  $('fixCopies').checked = s.fixCopies === true;
   $('keepLog').checked = s.keepLog === true;
   if (document.activeElement !== $('ollamaUrl')) $('ollamaUrl').value = s.ai.url;
 
@@ -362,8 +364,20 @@ function renderSettings() {
 
 // ---------------------------------------------------------------- AI status
 
+// The reading pass rests itself when the model can't keep up (background.js, noteAiOutcome).
+async function showReadPause() {
+  const { readPause } = (await chrome.storage.session?.get('readPause')) || {};
+  const paused = !!readPause && Date.now() < readPause.until && state.settings.ai.read;
+  $('aiPaused').hidden = !paused;
+  if (paused) {
+    const at = new Date(readPause.until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    $('aiPaused').textContent = `Reading is resting until ${at}: the AI has been too slow on this computer. Rule fixes still work.`;
+  }
+}
+
 async function refreshAiStatus() {
   const ai = state.settings.ai;
+  showReadPause();
   if (ai.engine === 'off') return;
   const dot = $('aiDot'), label = $('aiStatus'), action = $('aiAction');
   dot.className = 'statusDot';
@@ -420,7 +434,7 @@ async function testAi() {
   out.textContent = 'Asking the AI… (the first run can take a little while)';
   $('aiTest').disabled = true;
   const t0 = performance.now();
-  const s1 = 'For issues were Claude says no, I have another model start off the work.';
+  const s1 = 'For issues were the editor says no, I ask another person to start the work.';
   const s2 = 'As a Scot, only their/there are homophones. They’re is not pronounced the same.';
   const res = await chrome.runtime.sendMessage({
     type: 'iac:proofread',
@@ -437,7 +451,7 @@ async function testAi() {
   const secs = ((performance.now() - t0) / 1000).toFixed(1);
   if (!res || !res.ok) { out.textContent = 'The AI didn’t answer: ' + ((res && res.error) || 'no reply'); return; }
   const [a, b] = res.result.checks.map((c) => c.ok);
-  out.textContent = `${a ? '✓' : '✗'} fixes “issues were Claude says” → where  ·  ` +
+  out.textContent = `${a ? '✓' : '✗'} fixes “issues were the editor says” → where  ·  ` +
     `${b ? '✗' : '✓'} leaves “They’re is not pronounced” alone  ·  ${secs}s`;
 }
 $('aiTest').addEventListener('click', testAi);
@@ -607,6 +621,7 @@ $('rememberOff').addEventListener('click', () => {
   $('rememberAI').checked = false;
   saveSettings({ rememberAI: false });
 });
+$('fixCopies').addEventListener('change', (e) => saveSettings({ fixCopies: e.target.checked }));
 $('keepLog').addEventListener('change', (e) => saveSettings({ keepLog: e.target.checked }));
 $('ollamaUrl').addEventListener('change', async (e) => {
   await saveSettings({ ai: { ...state.settings.ai, url: e.target.value.trim() || AI_DEFAULTS.url } });
@@ -646,7 +661,7 @@ $('wikiImport').addEventListener('click', async (e) => {
 });
 // ---------------------------------------------------------------- diagnostics (the decision trace)
 
-const SENT_NOTE = 'Saved. Tell Claude “check the latest report”.';
+const SENT_NOTE = 'Saved to Downloads › internet-autocorrect-reports.';
 const LOG_OFF_NOTE = 'The debug log is off, so the report has only your settings. Turn on Keep a debug log ' +
   '(Settings › Diagnostics), reload the page, then send it again.';
 
@@ -663,10 +678,15 @@ async function sendReport(statusId, all) {
   const res = await report({ save: true, all });
   $(statusId).textContent = res.ok ? (res.logOff ? LOG_OFF_NOTE : SENT_NOTE) : 'Couldn’t save the report: ' + (res.error || 'no reply');
 }
-$('sendReport').addEventListener('click', () => sendReport('reportStatus', false));
-$('copyReport').addEventListener('click', () => copyReport('reportStatus'));
+// Saving a report needs the downloads permission, which only the unpacked copy has (package.sh takes it out).
+if (!chrome.runtime.getManifest().permissions?.includes('downloads')) {
+  $('reportBar').remove();
+  $('downloadTrace').remove();
+}
+$('sendReport')?.addEventListener('click', () => sendReport('reportStatus', false));
+$('copyReport')?.addEventListener('click', () => copyReport('reportStatus'));
 $('copyTrace').addEventListener('click', () => copyReport('traceStatus'));
-$('downloadTrace').addEventListener('click', () => sendReport('traceStatus', true));
+$('downloadTrace')?.addEventListener('click', () => sendReport('traceStatus', true));
 $('openBackup').addEventListener('click', () => chrome.runtime.openOptionsPage());
 $('clearTrace').addEventListener('click', async () => {
   await chrome.storage.local.set({ trace: [] });

@@ -137,6 +137,10 @@ Linguists treat these as **variation**, not error. Each is a consistent system o
     *less/fewer*, *irregardless*, *anyways*, *alright*, *could care less*, *on accident*. These are word choices
     some style guides dislike, not mistakes.
 
+11. **Other languages.** The rules and the AI know English only, and a word that is a slip in English may be correct
+    in the paragraph's own language. A paragraph that isn't in English is left alone whole (§4, *What language is
+    this*); a foreign word inside an English paragraph is covered by point 8.
+
 ## 4. How the extension tells the difference
 
 Signals that a form is **deliberate** (each one alone is enough to leave a word alone):
@@ -192,6 +196,24 @@ Signals that a form is a **slip**:
   and a real word is one or two keystrokes or sounds away.
 - It **is** a real word but the wrong one for the sentence, and it's a known confusable pair. The rules check
   the surrounding words, and the AI compares the sentence with and without the change.
+
+### What language is this
+
+Judged per paragraph, because one page can hold many languages: a Spanish comment in an English thread, or an English
+post on a page marked `lang="de"`. No single cue decides (GOALS.md §1). Evidence, read together:
+
+- **Function words** (*the, of, is, you*; *der, und*; *les, dans*; *yang, dengan*). Every language's most common words
+  are its own and few, so they're the best evidence. Plenty of English ones in a paragraph mean English, whatever else
+  it holds, even with heavy slang or typos. Almost none across six or more words means it isn't, which also covers
+  languages with no list here and languages written in Latin letters (*yaar tum kya kar rahe ho*).
+- **Letters**: mostly another script, or many words carrying accents. A few accents prove nothing (*café, résumé*).
+- **The page's stated language** (the nearest `lang` attribute): it can only count against English, and only when the
+  paragraph has few English function words of its own. `lang="en"` proves nothing, since sites set it for their
+  interface whatever people post.
+
+When in doubt, English is assumed only if nothing points elsewhere. A headline-like fragment with no function words
+may be left alone by this: a missed slip, the cheap kind of mistake. *Fix this comment* is the reader's explicit request
+and isn't subject to this check.
 
 ### Casual spellings: same spelling, slip or style
 

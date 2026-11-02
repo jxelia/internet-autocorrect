@@ -695,12 +695,18 @@
   // 'a', 'an', or null when the spelling doesn't settle the sound (acronyms, numbers, h-words like "historic"
   // that careful writers split on). Nothing may move an article away from this, whoever proposes it.
   function articleFor(word) {
-    if (!word || word.length < 2 || !/^[A-Za-z]/.test(word) || word === word.toUpperCase()) return null;
-    const w = norm(word);
+    if (!word || word.length < 2 || !/^[A-Za-z]/.test(word)) return null;
+    const bare = word.replace(/['’]s$/, '');
+    if (bare === bare.toUpperCase()) return null; // read as letters: a USB, an LLM's
+    const w = norm(bare);
+    // Read as letters too, in lower case: "an llm", "an sms", "an nvidia". A beginning no English word has, or a known one.
+    if (!/^(b[lr]?|c[hlr]?|d[rw]?|f[lr]?|g[hlnr]?|h|j|k[hlnr]?|l|m|n|p[hlrst]?|phr|q|r|rh|s|s[cklmnptw]|sc[hlr]|sh[lmnrw]?|sp[lr]|st[r]?|squ|t[hrw]?|thr|ts|v|w[hr]?|x|y|z)?[aeiouy]/.test(w)) return null;
+    if (/^(usb|url|uri|utf|uuid|ui|ux|uk|us|un|upc|ups)$/.test(w)) return null;
     if (/^(hour|honest|honor|honour|heir)/.test(w)) return 'an';
-    if (/^(uni|use|usu|eu|one|once|ewe|ur)/.test(w)) return 'a';
+    if (/^(onerou)/.test(w)) return 'an';
+    if (/^(uni(?!m|n(?!g)|d(?!ir))|use|usu|eu|one|once|ewe|urin|uran|urea|uru)/.test(w)) return 'a';
     if (/^[aio]/.test(w) || /^e/.test(w) ||
-      (/^u(n|m|p|s(?!e|u|ur)|t(?!il|ensil|opi)|gl|lt|nder)/.test(w) && !/^unan/.test(w))) return 'an';
+      (/^u(n|m|p|r|s(?!e|u|ur)|t(?!il|ensil|opi)|gl|lt|nder)/.test(w) && !/^unan/.test(w))) return 'an';
     if (/^h/.test(w)) return null;
     return /^[bcdfgjklmnpqrstvwxyz]/.test(w) ? 'a' : null;
   }
@@ -952,8 +958,63 @@ These are DELIBERATE and must be left alone:
 - names, usernames, products, code, URLs, hashtags, foreign words, new slang, puns and portmanteaus
 - usage some style guides dislike but which is not a slip (irregardless, anyways, alright, singular they)`;
 
+  // ---------------------------------------------------------------- what language is this? (POLICY.md §4)
+
+  const EN_FUNCTION = new Set(`the of and to in that is was for it with as on be at by this have from or an are not but
+    had they you were his her she he we i my me your our their them him what which who when where why how there here if
+    then than so can could would should will just about all more some no do does did been has am im dont its it's i'm
+    don't one out up like get got very too also only because these those any really think know want much`.split(/\s+/));
+  const OTHER_FUNCTION = new Set(`el los las del una por con pero como más está este esta también muy hay tiene
+    le les des une est dans pour avec sur pas qui que cette sont nous vous ils elle aux du et mais ou être cela très
+    der das und ist nicht ein eine mit von zu dem auf für sich auch als wie im ich sie wir aber oder wird werden sind
+    il di che sono della dello degli delle nel nella perché anche questo questa più gli
+    um uma não dos das uma mais são isso você ele ela seu sua
+    het een van voor niet zijn ook maar naar dit deze wordt aan bij
+    och att det som för är inte ett jag av ikke og af ved
+    się że jest ale jak nie przez tak
+    yang dan dari untuk dengan pada ini itu dalam tidak akan juga atau oleh
+    bir bu için ile olarak
+    și în cu este care sau
+    amb els més però
+    ang ng mga ay
+    katika kwa     je že jako jsou
+    ja ei että oli
+    hai nahi nahin kya aur bhi yaar tum kar raha rahe mein hain tha`.split(/\s+/));
+
+  const foreignMemo = { text: null, lang: null, why: null };
+  // Why this paragraph isn't English, or null. pageLang is the nearest lang attribute, if any.
+  function notEnglishReason(text, pageLang) {
+    if (!text) return null;
+    if (foreignMemo.text === text && foreignMemo.lang === pageLang) return foreignMemo.why;
+    const why = languageEvidence(text, pageLang);
+    Object.assign(foreignMemo, { text, lang: pageLang, why });
+    return why;
+  }
+  function languageEvidence(text, pageLang) {
+    const sample = text.slice(0, 2000);
+    const latin = (sample.match(/[A-Za-z\u00C0-\u024F\u1E00-\u1EFF]/g) || []).length;
+    const letters = (sample.match(/\p{L}/gu) || []).length;
+    if (letters && (letters - latin) / letters > 0.2) return 'written in another script';
+    const words = sample.toLowerCase().match(/[\p{L}][\p{L}'’]*/gu) || [];
+    if (!words.length) return null;
+    let en = 0, other = 0, accented = 0;
+    for (const raw of words) {
+      const w = raw.replace(/’/g, "'");
+      if (EN_FUNCTION.has(w)) en++;
+      else if (OTHER_FUNCTION.has(w)) other++;
+      if (/[^a-z']/.test(w)) accented++;
+    }
+    const n = words.length, share = en / n;
+    if (other >= 2 && other > en) return 'not in English (its common words are another language\'s)';
+    if (n <= 5 && other >= 1 && !en) return 'not in English (its common words are another language\'s)';
+    if (n >= 6 && share < 0.08) return 'not in English (almost no common English words)';
+    if (accented >= 2 && accented / n > 0.15 && share < 0.25) return 'not in English (many accented words)';
+    if (pageLang && !/^en\b/i.test(pageLang) && share < 0.15) return `not in English (the page says ${pageLang})`;
+    return null;
+  }
+
   const api = {
-    DELIBERATE, CONTRACTIONS, PROMPT_POLICY,
+    DELIBERATE, CONTRACTIONS, PROMPT_POLICY, notEnglishReason,
     protectedReason, dialectDensity, isElided, isRegionalVariant, checkAiEdit, locate, levenshtein, soundex,
     splitEdit, classify, worthChecking, CONFUSABLE, casualForm, knowsStandard, registerOf, allowCasualFix,
     sentenceAround, spellSuggestions, mechanism, judgeEdit, alternatives, keyboardSlip, confusionPair,

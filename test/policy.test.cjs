@@ -123,5 +123,25 @@ for (const [text, want] of [[LOST, 'bcmn'], [JOKE1, ''], ['The quick brown fox j
   const got = P.missingLetters(text).join('');
   if (got === want) pass++; else { fail++; console.log(`FAIL missingLetters ${text.slice(0, 30)}: ${got}, wanted ${want}`); }
 }
+// What language is this? (POLICY.md §4). Foreign paragraphs get a reason; English ones, however casual, don't.
+for (const [text, lang, foreign] of [
+  ['Der Hund ist nicht in dem Haus und die Katze auch nicht.', '', true],
+  ['Je ne sais pas pourquoi il est dans la maison avec elle.', '', true],
+  ['No sé por qué está aquí con los niños pero tiene razón.', '', true],
+  ['yaar tum kya kar rahe ho aaj kal', '', true],
+  ['Saya tidak tahu dari mana dia datang untuk ini.', '', true],
+  ['これは日本語の文章です。ありがとう。', '', true],
+  ['Merci beaucoup, tres bien fait', 'fr', true],
+  ['English post on a German page, and it is plainly in English.', 'de', false],
+  ['Der Hund ist nicht in dem Haus und die Katze auch nicht.', 'en', true],
+  ['lol this game sucks tbh but i still play it', '', false],
+  ['ngl dat boi was finna get rekt fr fr', '', false],
+  ['The café on my street has a great résumé of pastries.', '', false],
+  ['I definately think their going to win', '', false],
+  ['Thanks!', '', false],
+]) {
+  const got = !!P.notEnglishReason(text, lang);
+  if (got === foreign) pass++; else { fail++; console.log(`FAIL language ${text}: ${got}, wanted ${foreign}`); }
+}
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

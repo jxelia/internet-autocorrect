@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Internet Autocorrect</title>
+  <link rel="stylesheet" href="../popup.css">
+  <link rel="stylesheet" href="../welcome.css">
+</head>
+<body>
+  <main class="page">
+    <img class="mark" src="../icons/128.png" alt="" width="48" height="48">
+    <h1>You’re all set</h1>
+    <p class="lead">Internet Autocorrect quietly fixes slips in the text you read online, and marks every change. Reload
+      any open tabs to start.</p>
+
+    <ul class="kinds">
+      <li><span class="bar wrongword"></span><b>Wrong word</b><span>their → there, a apple → an apple</span></li>
+      <li><span class="bar spelling"></span><b>Misspelling</b><span>definately → definitely</span></li>
+      <li><span class="bar typo"></span><b>Typo</b><span>dont → don’t, the the → the</span></li>
+    </ul>
+
+    <h2>You stay in charge</h2>
+    <p>Hover a marked word to see the original and undo it. Use the toolbar icon to turn the extension off for a site.
+      Dialect, slang, regional spelling, names and other languages are left as written.</p>
+
+    <h2>The optional AI checker</h2>
+    <p>The rules work on their own. The AI checker also catches what they don’t know, using Chrome’s built-in model. It
+      runs on this computer, can use its processor heavily, and needs a one-time download of a few gigabytes.</p>
+    <div class="ai">
+      <button class="primary" id="aiOn" hidden>Turn on the AI checker</button>
+      <p class="note" id="aiNote" role="status"></p>
+    </div>
+
+    <h2>Your privacy</h2>
+    <p>Page text stays on this computer. There are no accounts, analytics or ads.</p>
+  </main>
+  <script src="chrome-shim.js"></script><script src="../welcome.js"></script>
+</body>
+</html>

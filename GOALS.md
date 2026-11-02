@@ -140,17 +140,17 @@ lowercase (casual writing, people's own style), and capitals don't always mark n
 | Popup always opened on This page (2026-11-03) | The reader's place was lost on closing | — (UI) | Reopens on the tab it was closed on, as in Mute List for Reddit (1.9.4) | — |
 | Fix this comment failed at first, then fixed only part: *take at brake* paragraph untouched, *at Instead*, *otto row* (2026-11-03) | A reading-pass timeout restarted the model in the middle of the asked call; asked fixes copied the original's capital; the model didn't work out *otto* or *space at* | Writer's slip pattern (which letters are missing) | Reading pauses while the reader's fix runs and can't restart the model; the model's capitals are kept; rare letters are passed as a hint; clicking Fix again asks again and adds to what's fixed (1.9.5) | Typo / Wrong word |
 | Nano reading pass nearly always timed out (2026-11-03) | Each timeout closed the model, so the next call had to load it again within its 15 s | — (performance, not a language case) | Loading doesn't count against the limit; a timeout cancels only that call and keeps the model loaded; call times are logged (1.9.6) | — |
+| Precision run on real comments (2026-11-03): *ahead of its time → it's*, *align their thinking → they're*, *an urgent → a urgent*, *an llm → a llm*, *I too have → to* | A possessive after a preposition or verb can't be a contraction, and a clause must be starting; lowercase initialisms are read as letters; some doubled words do two jobs | Sentence; Sound | `PREPOSITION`, `clauseStarts`, `articleFor` onset check, `REPEATABLE` narrowed (1.10.0) | — (left alone) |
+| Non-English paragraphs got English fixes (2026-11-03) | The rules know English only | Writer and setting | `notEnglishReason`: function words, letters, nearest `lang` (1.10.0) | — (left alone) |
 | *readin', writin', 'rithmatic* | Eye dialect | Writer and setting | Elision marks protect a word | — (left alone) |
 | *definately* in quotes / italics | Word mentioned, not used | Meaning and use | Use-vs-mention guards; since 1.7.22 only when the evidence shows a mention or echo (`the word "definately"`, `"definately" lol`), not for scare quotes or emphasis | — (left alone) |
 
 ## 6. Open questions and ideas
 
-- **Going public (the user, 2026-11-03: "a long way from workable... need to get it in public too").** Blockers
-  found: no language check (the rules run on non-English pages), reports and popup text name Claude, `downloads`
-  permission only serves reports, no privacy policy or first-run screen, no measured real-world precision. Open for
-  the user: what "public" means (store listing, public repo, or both; a store listing doesn't need the repo public,
-  and the repo is private over copying worries, with `CLAUDE.md` in its history), and whether Nano's reading pass stays
-  on by default for strangers' computers.
+- **Going public (the user, 2026-11-03: "a long way from workable... need to get it in public too").** 1.10.0 did the
+  blockers (other languages, measured precision, no Claude in the interface, reading backs off, copies opt-in, store
+  files). Open for the user: a public address for `PRIVACY.md` (the repo is private over copying worries, and a store
+  listing doesn't need the repo public), the store slot, and whether the listing goes ahead with more real-page use first.
 - **To revisit with the user (raised 2026-10-27, late at night; remind them):** what to save from a first visit so
   later visits start better prepared. Asked: should an AI check started on a page finish and be saved even after
   the user scrolls away, leaves, or goes to a site the extension is off for? (Yes: the background already does

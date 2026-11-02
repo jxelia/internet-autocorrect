@@ -72,6 +72,15 @@
   const ITS_NOT_OWNED = S(`this these those every each some any another such her their what which whose
     me him them us he she we they who about for at from with without after before under into`);
 
+  // What's before the word tells a possessive from a contraction. After a preposition only a possessive fits ("ahead of
+  // its time", "of your very own"). "They're/you're" starts a clause, so before a verb or adverb form it needs a clause
+  // to be starting: "I think their going" yes, "align their thinking", "getting their actually good" no.
+  const BARE_VERB = S(`want need have think know like love mean do get go see care feel believe say`);
+  const PREPOSITION = S(`of on in at by for from with without into onto over under about after before through across
+    against between during within upon per via toward towards among around near off up down`);
+  const CLAUSE_OPENER = S(`and but because cause cuz cos so if when while since though although that think thinks thought
+    know knew knows hope guess believe say says said sure maybe as yet or unless until once yeah yes no honestly well ok
+    okay oh now then man dude bro lol haha actually sorry wow hey see`);
   const COMPARATIVE = S(`more less better worse rather other bigger smaller larger higher lower faster slower
     easier harder longer shorter older younger cheaper greater stronger weaker smarter fewer louder quicker
     richer poorer safer further farther heavier lighter happier nicer cooler hotter colder warmer`);
@@ -103,10 +112,19 @@
     wouldn't couldn't shouldn't dont doesnt didnt cant wont`);
   const WHOS_NEXT = S(`going gonna the a an not coming been there doing that this`);
   const WHOSE_NEXT = S(`car house fault turn job idea side name phone kid kids dog`);
-  const REPEATABLE = S(`the a an to of in and for on with at it this be from by as my your we they are was
+  // Not "in", "on" or "it": doubled, they're usually two jobs ("type that in in order", "sees it it is").
+  const REPEATABLE = S(`the a an to of and for with at this be from by as my your we they are was
     but that is`);
   const REPEAT_OK = S(`that is had`); // "I know that that's...", "what it is is...", "he had had"
-
+  // A verb's particle, then a preposition that happens to match: "got in in 1999", "where you go to to fight".
+  const PARTICLE_VERB = S(`go goes going went gone come comes coming came get gets getting got log logs logged check checks
+    checked turn turns turned hand hands handed move moves moved put puts sign signs signed step steps stepped tune tuned
+    chip chips run runs ran hold holds held walk walks walked want wants wanted`);
+  const DOUBLED_PARTICLE = S(`to by`);
+  // After a/an, words that can't begin what it introduces: another slip ("comes in an says" is "and"), not the article.
+  const NOT_AFTER_ARTICLE = S(`says said was is are were has have had will would should can could then when where which who
+    that this these those the a an my his her their our your of in on at to for from with by and or but if because so not
+    indeed you i we they he she it him me us them`);
   // Contractions people type without the apostrophe.
   const CONTRACTIONS = {
     dont: "don't", doesnt: "doesn't", dosnt: "doesn't", didnt: "didn't", isnt: "isn't", wasnt: "wasn't",
@@ -184,7 +202,7 @@
   yesturday:yesterday yeasterday:yesterday youself:yourself teh:the hte:the adn:and taht:that waht:what
   wehn:when jsut:just konw:know knwo:know liek:like shoudl:should woudl:would coudl:could
   dosent:doesn't dosen't:doesn't evrything:everything everthing:everything anythign:anything
-  nothign:nothing thign:thing whcih:which wiht:with tihs:this thsi:this yuo:you yoru:your goign:going
+  nothign:nothing thign:thing whcih:which wiht:with tihs:this thsi:this yoru:your goign:going
   doign:doing agian:again aginst:against everytime:every_time alittle:a_little ect:etc
   suppossed:supposed`
     .split(/\s+/).filter(Boolean).forEach((pair) => {
@@ -245,16 +263,22 @@
   // ---------------------------------------------------------------- context rules
   // Each rule: (i, c) => replacement string | null. `c` is the context helper.
 
+  // Is a clause starting at token i? The sentence's start, a comma or similar, or a word that opens a clause.
+  const clauseStarts = (i, c) => {
+    const p = c.prev(i);
+    return !p || CLAUSE_OPENER.has(p) || /^\s*[,;:(—–]/.test(c.after(i - 1));
+  };
+
   const RULES = {
     their(i, c) {
       const n = c.next(i), n2 = c.next(i, 2), p = c.prev(i);
       if (n && THERE_VERB.has(n)) return 'there';
       if (n && MODAL_HAVE.has(n) && (n2 === 'be' || n2 === 'been')) return 'there';
-      if (n && (ING_THEY.has(n) || ADV_THEY.has(n))) {
+      if (n && (ING_THEY.has(n) || (ADV_THEY.has(n) && !BARE_VERB.has(n2)))) {
         if (n === 'doing' && c.endAfter(i + 1)) return null; // "it was their doing."
-        return "they're";
+        return clauseStarts(i, c) ? "they're" : null;
       }
-      if (n === 'not' && !(n2 && /ing$/.test(n2) && n2 !== 'going')) return "they're";
+      if (n === 'not' && !(n2 && /ing$/.test(n2) && n2 !== 'going') && !PREPOSITION.has(p)) return "they're";
       if (!n && c.endAfter(i) && p && PLACE_END.has(p)) return 'there'; // "over their."
       return null;
     },
@@ -274,7 +298,7 @@
       }
       if (ING_THEY.has(n)) {
         if (n2 === 'to' && c.next(i, 3) === 'be') return null; // "there going to be" — leave it
-        return "they're";
+        return clauseStarts(i, c) ? "they're" : null;
       }
       if (n === 'not' && n2 && !/ing$/.test(n2) && !c.startBefore(i)) return "they're";
       return null;
@@ -290,6 +314,11 @@
       const n = c.next(i), n2 = c.next(i, 2);
       if (!n || c.hyphenAfter(i + 1)) return null;
       if (n === 'were' || n === 'are') return 'you'; // "as your were learning"
+      if (PREPOSITION.has(c.prev(i)) || (n === 'very' && n2 === 'own')) return null;
+      if ((ADV_THEY.has(n) || /^(really|just|still|simply|almost)$/.test(n)) && BARE_VERB.has(n2)) return null; // "if your really want": you, not you're
+      if (n === 'right' && !c.startBefore(i) && !CLAUSE_OPENER.has(c.prev(i))) return null; // "in the EU, your right, for example, to"
+      // "love your thinking", "getting your actually good one": a verb or adverb form needs a clause to be starting
+      if ((/ing$/.test(n) || ADV_THEY.has(n)) && !clauseStarts(i, c)) return null;
       if (YOU_RE_ALWAYS.has(n)) {
         if (n === 'welcome' && n2 && /^(message|mat|email|page|screen|packet|gift|kit|letter|speech)s?$/.test(n2)) return null;
         return "you're";
@@ -306,6 +335,9 @@
       const n = c.next(i), n2 = c.next(i, 2);
       if (!n) return null;
       if (c.hyphenAfter(i + 1)) return null;
+      const p = c.prev(i);
+      if (n === 'very' && n2 === 'own') return null;
+      if (PREPOSITION.has(p) || (n === 'time' && /^(takes?|took|taking|taken|bides?|biding)$/.test(p))) return null;
       if (ITS_ALWAYS.has(n) || ITS_NOT_OWNED.has(n)) return "it's";
       // "its OpenAI's fault": a name in the possessive can't follow possessive "its"
       if (/^[A-Z][\w-]*['’]s$/.test(c.raw(i + 1))) return "it's";
@@ -328,7 +360,7 @@
     than(i, c) {
       const p = c.prev(i), n = c.next(i);
       if (p && THEN_PREV.has(p)) return 'then';
-      if (!p && c.startBefore(i) && n) return 'then'; // "Than I realised..."
+      if (!p && c.startBefore(i) && n && /^T/.test(c.raw(i))) return 'then'; // "Than I realised...", not "(or better!) than"
       return null;
     },
     of(i, c) {
@@ -359,7 +391,8 @@
     },
     effect(i, c) {
       const p = c.prev(i), n = c.next(i);
-      if (p && EFFECT_PREV.has(p) && n && !/^(changes?|real)$/.test(n)) return 'affect';
+      // "effect a change" is right: to bring it about
+      if (p && EFFECT_PREV.has(p) && n && !/^(changes?|real)$/.test(n) && !/^(changes?|reforms?)$/.test(c.next(i, 2) || '')) return 'affect';
       return null;
     },
     where(i, c) {
@@ -372,7 +405,7 @@
       if (!p && c.startBefore(i) && (n === 'going' || n === 'gonna')) return "we're";
       if (n && /^(is|are|did|does|do)$/.test(n) && !p) return 'where';
       if (n && /^(is|are)$/.test(n) && p && /^(know|see|wonder|that's|thats|exactly|from)$/.test(p)) return 'where';
-      // "for issues were Claude says no", "the place were I grew up": a noun, then a new clause
+      // "for issues were Sam says no", "the place were I grew up": a noun, then a new clause
       const n2 = c.next(i, 2);
       if (p && n && n2 && WHERE_NOUNS.has(p)) {
         const subject = SUBJECTS.has(n) || (/^[A-Z][a-z]+$/.test(c.raw(i + 1)) && /(s|ed)$/.test(n2));
@@ -382,7 +415,12 @@
     },
     to(i, c) {
       const n = c.next(i), p = c.prev(i);
-      if (n && p && TOO_NEXT.has(n) && TOO_PREV.has(p)) return 'too';
+      if (n && p && TOO_NEXT.has(n) && TOO_PREV.has(p)) {
+        // "what we need is to slow things down": also a verb, so only where it can't be one
+        const n2 = c.next(i, 2);
+        if ((n === 'slow' || n === 'long') && n2 && !c.endAfter(i + 1) && !/^(for|to|and|but|lol)$/.test(n2)) return null;
+        return 'too';
+      }
       if (!n && p && /^(me|you|us|them)$/.test(p) && c.endAfter(i) && /^[\s]*([.!]|$)/.test(c.after(i))) {
         const p2 = c.prev(i, 2);
         if (!p2 || /^(and|love|miss|same|lol|haha)$/.test(p2) || c.startBefore(i - 1)) return 'too';
@@ -391,7 +429,7 @@
     },
     too(i, c) {
       const n = c.next(i), p = c.prev(i);
-      if (n && TO_NEXT.has(n) && p !== 'me' && !c.endAfter(i)) {
+      if (n && TO_NEXT.has(n) && p !== 'me' && !/^(i|we|you|they|he|she|it)$/.test(p) && !c.endAfter(i)) { // "I too have"
         if (n === 'good' || n === 'much') return null;
         return 'to';
       }
@@ -494,7 +532,7 @@
 
   function tokenize(text) {
     const tokens = [];
-    const re = /[A-Za-z]+(?:['’][A-Za-z]+)*/g;
+    const re = /\p{L}+(?:['’]\p{L}+)*/gu; // every letter, or "Debían" would look like "Deb" and "an"
     let m;
     while ((m = re.exec(text))) {
       tokens.push({ raw: m[0], w: m[0].toLowerCase().replace(/’/g, "'"), s: m.index, e: m.index + m[0].length });
@@ -568,6 +606,8 @@
     if (!text || text.length < 2 || !/[A-Za-z]/.test(text)) return fixes;
     if (opts.emphasized) return fixes;
     const blockText = opts.blockText || text;
+    // A paragraph in another language: nothing in it is an English slip (POLICY.md §3.11)
+    if (P.notEnglishReason(blockText, opts.pageLang)) return fixes;
     const meta = metaGroups(blockText);
     const extra = opts.extraSpelling || null;
     const curly = text.includes('’') && !text.includes("'");
@@ -636,7 +676,8 @@
       const w = t.w;
 
       // Doubled word: "the the"
-      if (REPEATABLE.has(w) && !REPEAT_OK.has(w) && c.next(i) === w && !isAttached(text, tokens[i + 1])) {
+      if (REPEATABLE.has(w) && !REPEAT_OK.has(w) && c.next(i) === w && !isAttached(text, tokens[i + 1]) &&
+          !(DOUBLED_PARTICLE.has(w) && PARTICLE_VERB.has(c.prev(i)))) {
         add(t.s, tokens[i + 1].e, t.raw, 'typo', 'repeat');
         i++;
         continue;
@@ -693,6 +734,7 @@
         const n = tokens[i + 1];
         const nw = c.next(i);
         if (!nw || n.raw.length < 2 || n.raw === n.raw.toUpperCase() || c.hyphenAfter(i + 1) || isAttached(text, n)) continue;
+        if (NOT_AFTER_ARTICLE.has(nw)) continue;
         const want = P.articleFor(n.raw); // by sound, not letter: an hour, a university (policy.js)
         if (w === 'a' && want === 'an') add(t.s, t.e, matchCase(t.raw, 'an'), 'wrongword', 'article');
         else if (w === 'an' && want === 'a') add(t.s, t.e, matchCase(t.raw, 'a'), 'wrongword', 'article');
