@@ -509,6 +509,46 @@ async function pump() {
   running = false;
 }
 
+// ---------------------------------------------------------------- right-click: fix or leave one comment
+// The reader decides per comment (POLICY.md §5). Their choice is kept by a hash of each paragraph, so it holds on
+// every visit: { left: true } or { edits } (the changed words only).
+const RESTORE_LIMIT_MS = 90000; // the reader asked and is waiting; a paragraph this broken takes a small model a while
+const MAX_CHOICES = 1000;
+
+async function restoreParagraph(req) {
+  const ai = await aiSettings();
+  if (ai.engine === 'off') return { ok: false, error: 'off' };
+  const dict = await dictionary();
+  const res = await withTimeout(toAI({ type: 'restore', ai, text: req.text }), RESTORE_LIMIT_MS);
+  if (!res || !res.ok) return { ok: false, error: res?.error || 'no reply' };
+  const edits = IAC_Policy.restoredEdits(req.text, res.text, (w) => dict.has(w));
+  appendTrace([{ t: Date.now(), url: req.url, kind: 'ai', verdict: 'asked', text: req.text.slice(0, 300), corrected: String(res.text).slice(0, 300) }]);
+  return { ok: true, edits };
+}
+
+function setCommentChoice(key, value) {
+  serial(async () => {
+    const { commentChoices = {} } = await chrome.storage.local.get('commentChoices');
+    delete commentChoices[key];
+    if (value) commentChoices[key] = { ...value, t: Date.now() };
+    const kept = Object.entries(commentChoices).sort((a, b) => a[1].t - b[1].t).slice(-MAX_CHOICES);
+    await chrome.storage.local.set({ commentChoices: Object.fromEntries(kept) });
+  });
+}
+
+function makeMenus() {
+  chrome.contextMenus.removeAll(() => {
+    const contexts = ['page', 'selection', 'link'];
+    chrome.contextMenus.create({ id: 'iac-fix', title: 'Fix this comment', contexts });
+    chrome.contextMenus.create({ id: 'iac-leave', title: 'Leave this comment as written', contexts });
+  });
+}
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (!tab?.id) return;
+  chrome.tabs.sendMessage(tab.id, { type: 'iac:comment', action: info.menuItemId === 'iac-fix' ? 'fix' : 'leave' }, { frameId: 0 })
+    .catch(() => { /* no content script on this page */ });
+});
+
 // ---------------------------------------------------------------- History: Open
 
 // Go to the page a logged fix came from (its own comment or post when known) and show the fix there.
@@ -591,6 +631,12 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     case 'iac:proofread':
       proofread(msg.req, !!msg.cacheOnly).then(reply);
       return true;
+    case 'iac:restore':
+      restoreParagraph(msg.req).then(reply, (e) => reply({ ok: false, error: String(e.message || e) }));
+      return true;
+    case 'iac:commentChoice':
+      setCommentChoice(msg.key, msg.value);
+      return false;
     case 'iac:aiStatus':
       (async () => {
         try {
@@ -613,7 +659,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
 // Chrome doesn't put a new version's content scripts into tabs that are already open, and the old ones are cut
 // off (content.js notices within a couple of seconds and undoes itself). Inject the new version so open tabs
 // keep working without a refresh.
-chrome.runtime.onInstalled.addListener(() => setTimeout(injectIntoOpenTabs, 3000));
+chrome.runtime.onInstalled.addListener(() => { makeMenus(); setTimeout(injectIntoOpenTabs, 3000); });
 async function injectIntoOpenTabs() {
   const scripts = chrome.runtime.getManifest().content_scripts || [];
   for (const tab of await chrome.tabs.query({ url: ['http://*/*', 'https://*/*'] })) {

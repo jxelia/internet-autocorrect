@@ -56,6 +56,18 @@ window.__iacTest = true;
           return { table: window.IAC_Policy.regionalTable(txt, msg.region) };
         }
         if (msg.type === 'iac:aiStatus') return { state: 'available', models: ['gemma3:4b'] };
+        if (msg.type === 'iac:restore') {
+          // background.js restoreParagraph, with a stand-in AI (window.__mockRestore: text -> corrected text)
+          window.__words = window.__words || new Set((await (await fetch('../data/words.txt')).text()).split('\n'));
+          if (!window.__mockRestore) return { ok: false, error: 'off' };
+          return { ok: true, edits: IAC_Policy.restoredEdits(msg.req.text, window.__mockRestore(msg.req.text), (w) => window.__words.has(w)) };
+        }
+        if (msg.type === 'iac:commentChoice') {
+          const { commentChoices = {} } = await chrome.storage.local.get('commentChoices');
+          delete commentChoices[msg.key];
+          if (msg.value) commentChoices[msg.key] = msg.value;
+          await chrome.storage.local.set({ commentChoices });
+        }
         if (msg.type === 'iac:proofread') {
           // like background.js: answers are cached per paragraph; cacheOnly asks only the cache
           const key = JSON.stringify([msg.req.text, msg.req.candidates.map((c) => c.original + '→' + c.replacement)]);

@@ -742,7 +742,7 @@
     } catch (_) {
       res = null;
     }
-    if (!active) return;
+    if (!active || commentChoices[choiceKey(text)]) return; // left or fixed by the reader while the AI was thinking
     if (peek) {
       if (blockState.get(block)?.status !== 'queued') return; // it came into view and its own review took over
       if (!res || !res.ok || !res.result) {
@@ -929,10 +929,13 @@
     }
     for (const [block, nodes] of blocks) {
       const text = texts.get(block);
+      const choice = commentChoices[choiceKey(text)];
+      if (choice?.left) continue; // the reader said to leave this one as written
       const registerText = commentText(block);
       let any = false;
       for (const n of nodes) if (processNode(n, text, registerText)) any = true;
       if (undone.length) restoreUndone(nodes);
+      if (choice?.edits) { placeAsked(block, choice.edits); continue; } // the reader's own fix: no AI check needed
       if (any) scheduleReview(block);
     }
 
@@ -968,6 +971,126 @@
       }
     }
   });
+
+  // ------------------------------------------------------------------ right-click: fix or leave one comment
+  // POLICY.md §5. The rules and the AI leave jokes and deliberate typos alone as best they can; only the reader can
+  // really tell, so they can overrule it for one comment either way. Each choice undoes the other.
+  let commentChoices = {}; // paragraph hash -> { left: true } | { edits: [{ start, end, original, replacement, type }] }
+  let menuTarget = null;
+  const choiceKey = (text) => hash(squash(text).trim());
+  document.addEventListener('contextmenu', (e) => { menuTarget = e.composedPath()[0]; }, true);
+
+  // The paragraphs of the comment under the pointer; off Reddit (no comment box known), the paragraph itself.
+  function commentBlocks(target) {
+    const el = target?.nodeType === Node.TEXT_NODE ? target.parentElement : target;
+    if (!el?.closest) return [];
+    const box = el.closest(COMMENT_SELECTOR);
+    if (!box) return [el.closest(BLOCK_SELECTOR) || el];
+    const blocks = new Set();
+    const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      if (n.parentElement && !n.parentElement.closest(SKIP_SELECTOR) && !n.parentElement.closest('blockquote') && acceptable(n)) blocks.add(blockOf(n));
+    }
+    return [...blocks];
+  }
+
+  function setChoice(text, value) {
+    const key = choiceKey(text);
+    if (value) commentChoices[key] = value; else delete commentChoices[key];
+    send({ type: 'iac:commentChoice', key, value });
+  }
+
+  function leaveComment(blocks) {
+    for (const block of blocks) {
+      const { text } = blockSegments(block);
+      const { segs } = blockSegments(block, Infinity);
+      setChoice(text, { left: true });
+      unwatch(block);
+      blockState.delete(block);
+      for (const { node } of segs) {
+        const rec = records.get(node);
+        if (!rec) continue;
+        for (const fix of rec.fixes) if (fix.logKey) send({ type: 'iac:reverted', key: location.href + '#' + fix.logKey, reverted: true });
+        if (node.data === rec.written) node.data = rec.orig;
+        dropRecord(node, rec);
+      }
+      trace({ kind: 'user', verdict: 'leave', text: text.slice(0, 300), pid: hash(text) });
+    }
+    scheduleSquiggles();
+    publishFixes();
+    updateBadge();
+  }
+
+  // Put the reader's asked-for fixes on the page; a rule fix waiting for the AI in this paragraph is settled.
+  function placeAsked(block, edits) {
+    const { text, segs } = blockSegments(block);
+    const touched = new Set();
+    let placed = 0;
+    for (const e of edits) {
+      const seg = segs.find((g) => g.start <= e.start && e.end <= g.end);
+      if (!seg || text.slice(e.start, e.end) !== e.original) continue; // spans a link or bold run, or the text changed
+      const rec = ensureRecord(seg.node);
+      const start = e.start - seg.start;
+      const f = { start, end: start + e.original.length, original: e.original, replacement: matchCase(e.original, e.replacement),
+        category: categoryOf(e.type), rule: 'ai', source: 'ai', via: 'asked', reason: '', chosen: true };
+      f.state = wasUndone(seg.node, f) ? 'reverted' : 'on';
+      if (addFix(seg.node, rec, f)) { touched.add(seg.node); placed++; }
+    }
+    for (const node of touched) {
+      const rec = records.get(node);
+      render(node, rec);
+      logFixes(rec, rec.fixes);
+    }
+    settlePending(segs);
+    blockState.set(block, { sig: text, status: 'done' });
+    updateBadge();
+    return placed;
+  }
+
+  async function fixComment(blocks) {
+    let placed = 0, failed = null;
+    const asking = blocks.filter((b) => !commentChoices[choiceKey(blockSegments(b).text)]?.edits);
+    if (asking.length) toast('Fixing this comment…', 0);
+    for (const block of blocks) {
+      const { text } = blockSegments(block);
+      if (!/[A-Za-z]{2}/.test(text)) continue;
+      const had = commentChoices[choiceKey(text)];
+      if (had?.left) { setChoice(text, null); enqueue(block); } // takes back "leave as written"
+      if (had?.edits) { placed += placeAsked(block, had.edits); continue; }
+      let res;
+      try {
+        res = await chrome.runtime.sendMessage({ type: 'iac:restore', req: { text, url: location.href } });
+      } catch (_) {
+        res = null;
+      }
+      if (!active) return;
+      if (!res?.ok) { failed = res?.error || 'no reply'; continue; }
+      if (res.edits.length) {
+        setChoice(text, { edits: res.edits });
+        unwatch(block);
+        placed += placeAsked(block, res.edits);
+      }
+    }
+    toast(placed ? `Fixed ${placed} ${placed === 1 ? 'place' : 'places'}`
+      : failed === 'off' ? 'Turn on an AI checker in Settings first'
+      : failed ? 'The AI gave no answer' : 'The AI found nothing to fix');
+  }
+
+  // A small note at the bottom of the window: the only thing on the page while the AI works.
+  let toastHost = null, toastTimer = null;
+  function toast(message, ms = 3000) {
+    if (!toastHost) {
+      toastHost = document.createElement('div');
+      toastHost.id = 'iac-toast-host';
+      toastHost.attachShadow({ mode: 'open' }).innerHTML = `<style>div { position: fixed; left: 50%; bottom: 24px;
+        transform: translateX(-50%); z-index: 2147483647; padding: 6px 12px; border-radius: 6px; background: #1f2937;
+        color: #e5e7eb; font: 13px/1.4 system-ui, sans-serif; pointer-events: none; }</style><div role="status"></div>`;
+    }
+    if (!toastHost.isConnected) document.documentElement.appendChild(toastHost);
+    toastHost.shadowRoot.querySelector('div').textContent = message;
+    clearTimeout(toastTimer);
+    if (ms) toastTimer = setTimeout(() => toastHost.remove(), ms);
+  }
 
   // ------------------------------------------------------------------ decision trace
   // Every candidate fix and what happened to it, sent to background.js (kept on this computer).
@@ -1030,10 +1153,11 @@
 
   async function loadUndone() {
     try {
-      ({ undone = [], applied = [] } = await chrome.storage.local.get(['undone', 'applied']));
+      ({ undone = [], applied = [], commentChoices = {} } = await chrome.storage.local.get(['undone', 'applied', 'commentChoices']));
     } catch (_) {
       undone = [];
       applied = [];
+      commentChoices = {};
     }
   }
 
@@ -1615,6 +1739,12 @@
       case 'iac:getSelection':
         reply({ text: String(window.getSelection() || '').trim().slice(0, 2000) });
         break;
+      case 'iac:comment': {
+        const blocks = active ? commentBlocks(menuTarget) : [];
+        if (blocks.length) (msg.action === 'fix' ? fixComment : leaveComment)(blocks);
+        reply({ ok: !!blocks.length });
+        break;
+      }
       case 'iac:jump':
         reply({ ok: jumpTo(msg.id) });
         break;

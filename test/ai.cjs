@@ -39,6 +39,21 @@ the version that leaves it exactly as the writer typed it is the correct one.
 If the version as written uses a deliberate dialect, regional spelling, slang or eye-dialect form, it is correct.
 Judge only the differing word. Ignore any other mistakes in the sentence.`;
 
+// Only when the reader asks for it ("Fix this comment"), never on its own. policy.js checks the answer (restoredEdits).
+const RESTORE_PROMPT = `A reader asked you to correct one paragraph from a website. The writer's typing went wrong,
+perhaps on purpose: letters may be missing, a space may stand where a letter belongs ("orre t" for "correct",
+"spa e" for "space"), words may be split, and sound-alike or nearby words may be swapped ("brake" for "break",
+"sloe" for "slow").
+Write the paragraph out as it would read with those slips put right. Use the context of the whole paragraph to work
+out what each broken word was. Keep the writer's own words, order, tone and punctuation: fix, never rephrase.
+Reply with JSON only: {"text": "the corrected paragraph"}.`;
+
+const RESTORE_SCHEMA = {
+  type: 'object',
+  properties: { text: { type: 'string' } },
+  required: ['text'],
+};
+
 const FIND_SCHEMA = {
   type: 'object',
   properties: {
@@ -193,6 +208,12 @@ async function confirm(items, ai) {
   return votes;
 }
 
+async function restore(text, ai) {
+  const ask = ai.engine === 'ollama' ? ollamaAsk : nanoAsk;
+  const r = await ask(RESTORE_PROMPT, `Paragraph:\n<<<\n${text}\n>>>\n\nReply with JSON only.`, RESTORE_SCHEMA, ai);
+  return typeof r.text === 'string' ? r.text : '';
+}
+
 // ---------------------------------------------------------------- messaging
 
 if (typeof chrome !== 'undefined' && chrome.runtime) chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
@@ -203,6 +224,8 @@ if (typeof chrome !== 'undefined' && chrome.runtime) chrome.runtime.onMessage.ad
         reply(msg.engine === 'ollama' ? await ollamaStatus(msg.ai) : await nanoStatus());
       } else if (msg.type === 'proofread') {
         reply({ ok: true, result: await proofread(msg.req, msg.ai) });
+      } else if (msg.type === 'restore') {
+        reply({ ok: true, text: await restore(msg.text, msg.ai) });
       } else if (msg.type === 'confirm') {
         reply({ ok: true, votes: await confirm(msg.items, msg.ai) });
       } else {
@@ -217,4 +240,4 @@ if (typeof chrome !== 'undefined' && chrome.runtime) chrome.runtime.onMessage.ad
 });
 
 // Exposed for the test harness (test/ai-eval.cjs runs these prompts against Ollama).
-if (typeof module !== 'undefined') module.exports = { proofread, confirm, FIND_PROMPT, CHOOSE_PROMPT };
+if (typeof module !== 'undefined') module.exports = { proofread, confirm, restore, RESTORE_PROMPT, FIND_PROMPT, CHOOSE_PROMPT };

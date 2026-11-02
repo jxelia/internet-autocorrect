@@ -40,6 +40,7 @@ function mergeBackup(current, backup) {
   if (cur.reports || old.reports) local.reports = unionBy(cur.reports, old.reports, (r) => r.id || JSON.stringify(r));
   if (cur.undone || old.undone) local.undone = unionBy(cur.undone, old.undone, (u) => u.page + '#' + u.key).slice(-1000);
   if (cur.applied || old.applied) local.applied = unionBy(cur.applied, old.applied, (u) => u.page + '#' + u.key).slice(-1000);
+  if (cur.commentChoices || old.commentChoices) local.commentChoices = { ...(old.commentChoices || {}), ...(cur.commentChoices || {}) };
   if (cur.undoCounts || old.undoCounts) {
     local.undoCounts = { ...(old.undoCounts || {}) };
     for (const [k, v] of Object.entries(cur.undoCounts || {})) local.undoCounts[k] = union(local.undoCounts[k], v).slice(-5);

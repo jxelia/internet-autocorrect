@@ -240,6 +240,21 @@ by the sentence.
    - Regional variants are never "fixed".
    - Anything the AI marked as possibly deliberate, or not highly confident, is dropped.
 
+### The reader's choice, per comment
+
+Only the reader can really tell a joke from a slip: the post and replies around a comment often settle it, and the
+extension sees one comment at a time. So the reader can overrule it for one comment, from the right-click menu:
+
+- **Leave this comment as written** takes back every change in the comment, including rule fixes, and keeps it that
+  way on later visits. It doesn't count towards never-change: it says nothing about those words elsewhere.
+- **Fix this comment** asks the AI to correct each paragraph. The reader has looked and wants it fixed, so the
+  guards for deliberate language (§3–4) step aside. `restoredEdits` still checks the answer: aligned word by word
+  with the original, each changed run must stay close in letters and end in real words, an added or removed word
+  alone is ignored, and a different text altogether is dropped. Every change is marked and can be undone as usual.
+
+Each undoes the other. Only the changed words are kept, under a hash of the paragraph. Without the reader asking,
+jokes stay protected (§3.9).
+
 ## 6. Learning, and staying honest
 
 - A spelling fix the AI proposes and you never undo becomes an instant rule after 3 sightings. Undoing a fix

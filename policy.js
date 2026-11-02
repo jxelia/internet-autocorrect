@@ -874,6 +874,49 @@
     return [...out].filter((x) => x !== w && !pronounCase(w, x) && !(BE_DO_HAVE.has(w) && BE_DO_HAVE.has(x))).slice(0, 3);
   }
 
+  // ---------------------------------------------------------------- a fix the reader asked for (POLICY.md §5)
+  // "Fix this comment": the reader has looked and wants it fixed, joke or not, so the guards that protect the writer's
+  // style step aside. What's left is proof that the model corrected the text instead of rewriting it: its version is
+  // aligned with the original word by word, and each changed run must stay close in letters and end in real words.
+  // Runs split by a space (orre t -> correct) are fine here. Returns [{ start, end, original, replacement, type }].
+  function restoredEdits(text, corrected, isWord) {
+    const toks = (t) => [...String(t).matchAll(/\S+/g)].map((m) => ({ w: m[0], s: m.index, e: m.index + m[0].length }));
+    const o = toks(text), r = toks(corrected);
+    const letters = (t) => t.toLowerCase().replace(/[^a-z]/g, '');
+    // a different text altogether (an answer, a summary), not the same words corrected
+    const a = letters(text), b = letters(corrected);
+    if (!a || !b || levenshtein(a, b) > Math.max(4, a.length * 0.35)) return [];
+    const same = (x, y) => x.w === y.w;
+    const L = Array.from({ length: o.length + 1 }, () => new Array(r.length + 1).fill(0));
+    for (let i = o.length - 1; i >= 0; i--) {
+      for (let j = r.length - 1; j >= 0; j--) {
+        L[i][j] = same(o[i], r[j]) ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+      }
+    }
+    const out = [];
+    const flush = (co, cr) => {
+      if (!co.length || !cr.length) return; // a word only added or only removed is a rewrite
+      const start = co[0].s, end = co[co.length - 1].e;
+      const original = text.slice(start, end), replacement = cr.map((x) => x.w).join(' ');
+      const x = letters(original), y = letters(replacement);
+      if (x === y && co.length === cr.length) return; // punctuation or capitals: style
+      if (levenshtein(x, y) > Math.max(2, Math.ceil(Math.max(x.length, y.length) * 0.5))) return;
+      const bare = (w) => norm(w).replace(/^[^a-z']+|[^a-z']+$/g, '');
+      const compound = (w) => [...w].some((_, n) => n >= 3 && w.length - n >= 3 && isWord(w.slice(0, n)) && isWord(w.slice(n))); // autocorrect
+      const real = (w) => !bare(w) || isWord(bare(w)) || CONTRACTIONS.has(bare(w)) || isWord(bare(w).replace(/'s$/, '')) || compound(bare(w));
+      if (!cr.every((t) => real(t.w))) return;
+      out.push({ start, end, original, replacement, type: co.every((t) => real(t.w)) ? 'wrongword' : 'spelling' });
+    };
+    let i = 0, j = 0, co = [], cr = [];
+    while (i < o.length || j < r.length) {
+      if (i < o.length && j < r.length && same(o[i], r[j])) { flush(co, cr); co = []; cr = []; i++; j++; }
+      else if (i < o.length && (j >= r.length || L[i + 1][j] >= L[i][j + 1])) co.push(o[i++]); // ties: "at brake at" -> "a break at"
+      else cr.push(r[j++]);
+    }
+    flush(co, cr);
+    return out;
+  }
+
   // ---------------------------------------------------------------- the policy, in words, for the AI
 
   const PROMPT_POLICY = `Your job is to restore what the writer MEANT to write when they slipped. You are not an editor
@@ -904,7 +947,7 @@ These are DELIBERATE and must be left alone:
     splitEdit, classify, worthChecking, CONFUSABLE, casualForm, knowsStandard, registerOf, allowCasualFix,
     sentenceAround, spellSuggestions, mechanism, judgeEdit, alternatives, keyboardSlip, confusionPair,
     articleFor, wordForm, isWordForm, frameForm, nameReason, namesIn, isTitleCase, KNOWN_NAMES, REGULARISED, FLAT_ADVERBS,
-    regionalTable, regionalReason, REGION_NAME, varietyName, isQuoted, mentionReason, META_WORDS, capsStyle,
+    restoredEdits, regionalTable, regionalReason, REGION_NAME, varietyName, isQuoted, mentionReason, META_WORDS, capsStyle,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.IAC_Policy = api;
