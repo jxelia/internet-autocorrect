@@ -6,6 +6,7 @@ Last updated: 3 November 2026
 
 - **What it reads:** the text of the pages you visit, to find and fix slips. This happens in your browser. It skips boxes you type in, password fields and code.
 - **The AI checker (optional, off until you turn it on):**
+  - *Built-in* uses a small model that comes inside the extension and runs on your computer. Sentences go only to that model, and nothing is downloaded.
   - *Chrome on-device* uses Gemini Nano, built into Chrome. Paragraphs go to that model on your computer. Chrome downloads the model from Google once; page text isn't part of that download.
   - *Ollama* sends paragraphs to the address you set, by default your own computer (`localhost`). If you enter another computer's address, text goes there.
 - **What it stores, in Chrome's extension storage on your computer:** your settings and lists, and a history of the fixes it made with a few words around each and the page address. You can clear the history in Settings.

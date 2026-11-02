@@ -630,7 +630,36 @@
     return {
       sentence: clean(text.slice(a, b)),
       fixedSentence: clean(text.slice(a, s) + replacement + text.slice(e, b)),
+      pre: text.slice(a, s),
+      suf: text.slice(e, b),
     };
+  }
+
+  // ---------------------------------------------------------------- built-in checker (POLICY.md §0, scorer.js)
+  // How far ahead a word must be (log odds) for each decision. Measured on real comments against gemma3:4b: GOALS.md §6.
+  const SCORE_VETO = 3; // a rule fix is turned down only if the original is this far ahead
+  const SCORE_CONFIRM = 6; // something the AI proposed goes ahead only if the fix is this far ahead
+  const SCORE_DETECT = 10; // nothing else proposed it: a swap is only suggested at this margin
+  const SCORE_GATE = 4; // a quick look first, so a clear no costs one model call
+  const MAX_DETECT = 12;
+  const NOT_A_FORM = new Set(['theyre', 'youre', 'yore', 'wether', 'rite', 'reck', 'loosing', 'wear', 'allot', 'bye', 'alot', 'dew', 'vane']);
+
+  // Words in this paragraph that a slip could have come from: each with the confusion-set word it might have been.
+  function slipCandidates(text, isWord) {
+    const out = [];
+    for (const m of text.matchAll(/(?<![A-Za-z'\u2019-])[A-Za-z]+(?:['\u2019][a-z]+)?(?![A-Za-z'\u2019-])/g)) {
+      const w = norm(m[0]);
+      if (!CONFUSABLE.has(w) || NOT_A_FORM.has(w)) continue;
+      const end = m.index + m[0].length;
+      for (const alt of PARTNERS.get(w)) {
+        if (NOT_A_FORM.has(alt) || /^(to|of|a|an|by|off)$/.test(alt) || !(isWord(alt) || CONTRACTIONS.has(alt))) continue;
+        const { pre, suf } = sentenceAround(text, m.index, end, alt);
+        if ((pre + suf).trim().split(/\s+/).length < 5) continue;
+        out.push({ start: m.index, end, original: m[0], replacement: alt, pre, suf });
+        if (out.length >= MAX_DETECT) return out;
+      }
+    }
+    return out;
   }
 
   // ---------------------------------------------------------------- offline spellchecker
@@ -1043,7 +1072,7 @@ These are DELIBERATE and must be left alone:
     DELIBERATE, CONTRACTIONS, PROMPT_POLICY, notEnglishReason,
     protectedReason, dialectDensity, isElided, isRegionalVariant, checkAiEdit, locate, levenshtein, soundex,
     splitEdit, classify, worthChecking, CONFUSABLE, casualForm, knowsStandard, registerOf, allowCasualFix,
-    sentenceAround, spellSuggestions, mechanism, judgeEdit, alternatives, keyboardSlip, confusionPair,
+    sentenceAround, slipCandidates, SCORE_VETO, SCORE_CONFIRM, SCORE_DETECT, SCORE_GATE, spellSuggestions, mechanism, judgeEdit, alternatives, keyboardSlip, confusionPair,
     articleFor, wordForm, isWordForm, frameForm, nameReason, namesIn, isTitleCase, KNOWN_NAMES, REGULARISED, FLAT_ADVERBS,
     restoredEdits, missingLetters, regionalTable, regionalReason, REGION_NAME, varietyName, isQuoted, mentionReason, META_WORDS, capsStyle,
   };

@@ -182,7 +182,8 @@ async function review(text, rawEdits, suggestions, ai, casualMode, registerText)
     if (!at) { note(e, { verdict: 'block', why: 'could not find it in the paragraph' }); continue; }
     const d = P.judgeEdit(e, { ...base, at });
     note(e, d);
-    if (d.verdict === 'apply') apply.push(e);
+    if (d.verdict === 'apply' || (e.scored && d.verdict === 'confirm')) apply.push(e);
+    else if (e.scored) continue; // only the checks above can stop or pass what the built-in checker found
     else if (d.verdict === 'confirm') queueConfirm('e' + ask.length, e, at);
     else if (d.verdict === 'repair') {
       const group = 'r' + ask.length;
@@ -204,10 +205,24 @@ async function review(text, rawEdits, suggestions, ai, casualMode, registerText)
   }
 
   if (ask.length) {
-    const res = await timedAI({ type: 'confirm', ai, items: ask.map((a) => ({
-      original: a.edit.original, replacement: a.edit.replacement, sentence: a.sentence, fixedSentence: a.fixedSentence,
-    })) }, AI_LIMIT_MS);
-    const votes = res && res.ok ? res.votes : [];
+    // Swaps between real words go to the built-in checker: quicker, cooler and in the eval more accurate. The rest go to
+    // the model one at a time, each with its own limit: a slow one costs only itself and the ones after it, and answers
+    // already in are kept (one limit over all of them threw those away).
+    const swaps = ask.filter((a) => P.confusionPair(a.edit.original, a.edit.replacement));
+    const margins = swaps.length ? await scoreAll(swaps.map((a) => ({ pre: a.pre, a: a.edit.replacement, b: a.edit.original, suf: a.suf }))) : null;
+    const votes = [];
+    let modelDown = ai.engine === 'small';
+    for (const a of ask) {
+      const m = margins ? margins[swaps.indexOf(a)] : undefined;
+      if (typeof m === 'number') { votes.push({ first: 'built-in', second: Math.round(m * 10) / 10, ok: m > P.SCORE_CONFIRM }); continue; }
+      if (modelDown) { votes.push(null); continue; }
+      await inputPause();
+      const res = await timedAI({ type: 'confirm', ai, items: [{
+        original: a.edit.original, replacement: a.edit.replacement, sentence: a.sentence, fixedSentence: a.fixedSentence,
+      }] }, AI_LIMIT_MS);
+      if (res?.ok) votes.push(res.votes[0]);
+      else { votes.push(null); modelDown = true; }
+    }
     const groups = new Map();
     ask.forEach((a, i) => {
       a.votes = votes[i] || null;
@@ -373,7 +388,7 @@ const CACHE_MAX = 1000;
 const CACHE_MAX_AGE_MS = 30 * 24 * 3600 * 1000;
 const NO_ANSWER_RETRY_MS = 3 * 24 * 3600 * 1000;
 const keepAnswers = async () => (await chrome.storage.sync.get('rememberAI')).rememberAI === true;
-const LOGIC_FILES = ['policy.js', 'engine.js', 'ai.js', 'background.js'];
+const LOGIC_FILES = ['policy.js', 'engine.js', 'ai.js', 'scorer.js', 'background.js'];
 let logicStamp = null;
 function logicVersion() {
   logicStamp ??= Promise.all(LOGIC_FILES.map((f) => fetch(chrome.runtime.getURL(f)).then((r) => r.text())))
@@ -424,7 +439,7 @@ function hashKey(str) {
 const queue = [];
 let running = false;
 
-async function proofread(req, cacheOnly = false) {
+async function proofread(req, cacheOnly = false, id = null, prio = 1) {
   const ai = await aiSettings();
   const { casualMode = 'auto' } = await chrome.storage.sync.get('casualMode');
   const key = hashKey(JSON.stringify([req.text, req.candidates.map((c) => c.original + '→' + c.replacement),
@@ -436,14 +451,18 @@ async function proofread(req, cacheOnly = false) {
   return new Promise((resolve) => {
     // Already asked (a refresh, another tab): wait for that answer instead of asking twice. A queued one moves to
     // the front, since someone is reading it now.
+    const waiter = { resolve, id };
     const job = inflight.get(key);
     if (job) {
-      job.waiters.push(resolve);
+      job.waiters.push(waiter);
+      job.prio = Math.max(job.prio, prio);
+      if (id) jobsById.set(id, job);
       const i = queue.indexOf(job);
       if (i >= 0) { queue.splice(i, 1); queue.push(job); }
       return;
     }
-    const fresh = { req, key, waiters: [resolve] };
+    const fresh = { req, key, prio, waiters: [waiter] };
+    if (id) jobsById.set(id, fresh);
     inflight.set(key, fresh);
     queue.push(fresh);
     if (queue.length > 300) {
@@ -456,14 +475,29 @@ async function proofread(req, cacheOnly = false) {
 }
 
 const inflight = new Map(); // key -> job, from queued until its answer is in
+const jobsById = new Map(); // the page's id for its request -> job
+
+// The page no longer wants this paragraph read (scrolled far past, tab hidden, text changed). A job another page is
+// waiting on stays; a call already running finishes and is saved.
+function cancelJob(id) {
+  const job = jobsById.get(id);
+  if (!job) return;
+  jobsById.delete(id);
+  const i = job.waiters.findIndex((w) => w.id === id);
+  if (i >= 0) job.waiters.splice(i, 1)[0].resolve({ ok: false, cancelled: true });
+  const q = queue.indexOf(job);
+  if (!job.waiters.length && q >= 0) { queue.splice(q, 1); inflight.delete(job.key); }
+}
 // The model gave no answer (too slow even with the extra wait, or an error): log why. A timeout is remembered as an
 // empty answer, which the page treats as "no answer from the AI, rule kept" at once on later visits.
-function noAnswer(job, error) {
+function noAnswer(job, error, checks = []) {
   appendTrace([{ t: Date.now(), url: job.req.url, kind: 'ai', verdict: 'no answer', why: error, text: job.req.text.slice(0, 300) }]);
   // Only a timeout is about this paragraph; other errors (model not ready, offscreen gone) would hit every one.
-  if (error === 'timeout') remember(job.key, { ok: true, result: { checks: [], edits: [] }, noAnswer: true, error });
+  if (error === 'timeout') remember(job.key, { ok: true, result: { checks, edits: [] }, noAnswer: true, error });
 }
-function answer(job, res) { for (const r of job.waiters.splice(0)) r(res); } // the pages asking get this
+function answer(job, res) { // the pages asking get this
+  for (const w of job.waiters.splice(0)) { if (w.id) jobsById.delete(w.id); w.resolve(res); }
+}
 function finish(job, res) { answer(job, res); inflight.delete(job.key); }
 
 // HEAT CAP (1.8.1): after each model call, reading paragraphs (scan-only jobs) waits REST_FACTOR times as long as
@@ -475,6 +509,25 @@ const REST_FACTOR = 6;
 const REST_MAX_MS = 90000;
 const AI_LIMIT_MS = 15000;
 let restUntil = 0;
+
+// ZERO LAG (GOALS.md §1): the model shares the GPU with the page's scrolling, so no new call starts while the reader
+// is scrolling or clicking (a page waiting on the AI reports that, at most once a second).
+const INPUT_PAUSE_MS = 1500;
+let lastInputAt = 0;
+async function inputPause() {
+  while (Date.now() - lastInputAt < INPUT_PAUSE_MS) await new Promise((r) => setTimeout(r, 300));
+}
+
+// What's showing, then the way the reader is scrolling, newest first; every STARVE_EVERY-th reading job is the oldest
+// instead, so older paragraphs still get read (Firefox's AntiStarvationStack).
+const STARVE_EVERY = 4;
+let scanPicks = 0;
+function pickScanJob() {
+  if (++scanPicks % STARVE_EVERY === 0) return 0;
+  let best = queue.length - 1;
+  for (let k = queue.length - 2; k >= 0; k--) if (queue[k].prio > queue[best].prio) best = k;
+  return best;
+}
 
 // A computer whose model can't keep up: after SLOW_CALLS timeouts in a row the reading pass stops for a while (longer
 // each time, starting at READ_PAUSE_MS), so it can't run hot for nothing. Questions about rule fixes still go, and an
@@ -502,21 +555,47 @@ async function readingPaused() {
   return !!readPause && Date.now() < readPause.until;
 }
 
+// The built-in checker: how much better a fits than b, per item. Null if it couldn't run.
+const SCORE_LIMIT_MS = 15000;
+async function scoreAll(items) {
+  try {
+    const res = await withTimeout(toAI({ type: 'score', items }), SCORE_LIMIT_MS);
+    return res?.ok && Array.isArray(res.margins) ? res.margins : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+// Swaps nothing proposed: suggested only when the other word is far ahead. judgeEdit in review() still has its say.
+async function detectSlips(text, isWord) {
+  const P = IAC_Policy;
+  const found = P.slipCandidates(text, isWord);
+  if (!found.length) return [];
+  const margins = await scoreAll(found.map((f) => ({ pre: f.pre, a: f.replacement, b: f.original, suf: f.suf, gate: P.SCORE_GATE })));
+  if (!margins) return [];
+  return found.flatMap((f, i) => (margins[i] > P.SCORE_DETECT ? [{
+    original: f.original, replacement: matchCase(f.original, f.replacement), type: 'wrongword', source: 'built-in', scored: true,
+    context: text.slice(Math.max(0, f.start - 16), f.end + 16), margin: Math.round(margins[i] * 10) / 10,
+  }] : []));
+}
+
 async function pump() {
   if (running) return;
   running = true;
   while (queue.length) {
     if (askedRunning) { await new Promise((r) => setTimeout(r, 500)); continue; }
+    await inputPause();
+    if (!queue.length) break;
     // Newest first (what the reader is looking at now), and paragraphs with a rule fix waiting for the AI before
     // scan-only ones: only the waiting fixes show as "Checking with the AI".
-    let i = queue.length - 1, waiting = false;
+    let i = -1, waiting = false;
     for (let k = queue.length - 1; k >= 0; k--) if (queue[k].req.candidates.length) { i = k; waiting = true; break; }
     // Resting: look again shortly, so a fix that starts waiting meanwhile goes first.
     if (!waiting && Date.now() < restUntil) {
       await new Promise((r) => setTimeout(r, Math.min(restUntil - Date.now(), 1000)));
       continue;
     }
-    const job = queue.splice(i, 1)[0];
+    const job = queue.splice(waiting ? i : pickScanJob(), 1)[0];
     try {
       const ai = await aiSettings();
       if (ai.engine === 'off') { finish(job, { ok: false, error: 'off' }); continue; }
@@ -525,8 +604,10 @@ async function pump() {
       const isWord = (w) => dict.has(w);
       // The read-everything pass only when the reader turned it on (it's what keeps the model busy and the computer
       // warm); otherwise the AI only answers the rules' own questions.
-      const find = !!ai.read && !(await readingPaused()) && IAC_Policy.worthChecking(job.req.text, isWord);
-      if (!find && !job.req.candidates.length) { finish(job, { ok: true, result: { checks: [], edits: [] }, skipped: true }); continue; }
+      const small = ai.engine === 'small'; // the built-in checker alone, no language model
+      const reading = !!ai.read && IAC_Policy.worthChecking(job.req.text, isWord);
+      const find = reading && !small && !(await readingPaused());
+      if (!reading && !job.req.candidates.length) { finish(job, { ok: true, result: { checks: [], edits: [] }, skipped: true }); continue; }
       job.req.find = find;
       const suggestions = find ? IAC_Policy.spellSuggestions(job.req.text, isWord, {
         known: (w) => self.IAC_Engine.isKnownMisspelling(w),
@@ -534,8 +615,19 @@ async function pump() {
       }) : [];
       const hints = await getHints();
       const t0 = Date.now();
-      const res = await timedAI({ type: 'proofread', ai, req: { ...job.req, hints } }, AI_LIMIT_MS);
-      await noteAiOutcome(res, find);
+      // The rule questions, then the reading pass, each with its own limit: a slow read can't lose the answers about
+      // fixes the reader is waiting on. A slow first call skips the second.
+      const asked = { ...job.req, hints };
+      const cands = job.req.candidates;
+      // Rule questions: the built-in checker when it can answer, the language model when it can't.
+      const margins = cands.length ? await scoreAll(cands.map((c) => ({ pre: c.pre, a: c.replacement, b: c.original, suf: c.suf }))) : null;
+      const rulesRes = cands.length && !margins && !small ? await timedAI({ type: 'proofread', ai, req: { ...asked, find: false } }, AI_LIMIT_MS) : null;
+      const detected = reading ? await detectSlips(job.req.text, isWord) : [];
+      const readRes = find && (!rulesRes || rulesRes.ok) ? await timedAI({ type: 'proofread', ai, req: { ...asked, candidates: [], find: true } }, AI_LIMIT_MS) : null;
+      if (readRes || rulesRes) await noteAiOutcome(readRes || rulesRes, find);
+      const checks = margins ? margins.map((m, n) => ({ n: n + 1, ok: m >= -IAC_Policy.SCORE_VETO })) : rulesRes?.result?.checks || [];
+      const res = rulesRes && !rulesRes.ok ? rulesRes
+        : { ok: true, result: { checks, edits: [...detected, ...(readRes?.result?.edits || [])], error: readRes && !readRes.ok ? readRes.error : readRes?.result?.error || '' } };
       if (res?.ok) appendTrace([{ t: Date.now(), url: job.req.url, kind: 'ai', verdict: 'answered', ms: Date.now() - t0, find, text: job.req.text.slice(0, 80) }]);
       if (res && res.ok && res.result) {
         const { casualMode = 'auto' } = await chrome.storage.sync.get('casualMode');
@@ -543,7 +635,7 @@ async function pump() {
         res.result.edits = out.edits;
         res.result.trace = out.trace;
         // The model couldn't be reached (Ollama not running…): log it, and don't save "nothing found" as its answer.
-        if (res.result.error) { noAnswer(job, res.result.error); res.noAnswer = true; }
+        if (res.result.error) { noAnswer(job, res.result.error, checks); res.noAnswer = true; }
         else remember(job.key, res);
       }
       if (!res || !res.ok || !res.result) noAnswer(job, res?.error || 'no reply');
@@ -566,7 +658,7 @@ const MAX_CHOICES = 1000;
 
 async function restoreParagraph(req) {
   const ai = await aiSettings();
-  if (ai.engine === 'off') return { ok: false, error: 'off' };
+  if (ai.engine === 'off' || ai.engine === 'small') return { ok: false, error: 'off' }; // needs a language model
   const dict = await dictionary();
   // The reader is waiting: the reading queue pauses, and its timeouts can't close the model underneath this call.
   askedRunning++;
@@ -691,8 +783,19 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
       getRegional(msg.region).then((table) => reply({ table }), () => reply({ table: null }));
       return true;
     case 'iac:proofread':
-      proofread(msg.req, !!msg.cacheOnly).then(reply);
+      proofread(msg.req, !!msg.cacheOnly, msg.id, msg.prio).then(reply);
       return true;
+    case 'iac:prio': {
+      const job = jobsById.get(msg.id);
+      if (job) job.prio = msg.prio;
+      return false;
+    }
+    case 'iac:cancel':
+      cancelJob(msg.id);
+      return false;
+    case 'iac:input':
+      lastInputAt = Date.now();
+      return false;
     case 'iac:restore':
       restoreParagraph(msg.req).then(reply, (e) => reply({ ok: false, error: String(e.message || e) }));
       return true;
@@ -703,6 +806,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
       (async () => {
         try {
           const ai = { ...(await aiSettings()), ...(msg.ai || {}) };
+          if (ai.engine === 'small') { reply({ state: 'available' }); return; }
           reply(await toAI({ type: 'status', engine: ai.engine, ai }));
         } catch (e) {
           reply({ state: 'error', error: String(e.message || e) });

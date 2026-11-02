@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Lag check</title>
+<!-- How much main-thread time the extension costs on a huge page. ?new=1 runs content.js from the start of the page, as
+     the manifest does; ?none=1 runs without the extension, the baseline. ?n= sets the paragraph count. -->
+<script>
+window.__lag = { tasks: [], frames: [], fcp: 0, sum: 0, max: 0 };
+new PerformanceObserver((l) => { for (const e of l.getEntries()) { __lag.tasks.push(Math.round(e.duration)); __lag.sum += e.duration; __lag.max = Math.max(__lag.max, e.duration); } }).observe({ type: 'longtask', buffered: true });
+new PerformanceObserver((l) => { for (const e of l.getEntries()) if (e.name === 'first-contentful-paint') __lag.fcp = Math.round(e.startTime); }).observe({ type: 'paint', buffered: true });
+const q = new URLSearchParams(location.search);
+// Works in a hidden pane too, where long tasks aren't reported: the gaps between timer ticks.
+let last = performance.now();
+__lag.gaps = [];
+setInterval(() => { const n = performance.now(); if (n - last > 30) __lag.gaps.push(Math.round(n - last)); last = n; }, 4);
+window.__lagNone = q.has('none');
+</script>
+<script src="chrome-shim.js"></script>
+<script>
+// The shim stores its log in localStorage, synchronously; the real background doesn't touch the page's thread.
+const shimSend = chrome.runtime.sendMessage;
+chrome.runtime.sendMessage = async (m) => (['iac:log', 'iac:trace', 'iac:count'].includes(m.type) ? {} : shimSend(m));
+</script>
+<script>
+const load = (f) => document.write(`<script src="${f}"><\/script>`);
+if (!__lagNone && q.has('new')) { load('../policy.js'); load('../engine.js'); load('../copyfix.js'); load('../content.js'); }
+</script>
+<style>body { font: 15px/1.6 system-ui; max-width: 720px; margin: 24px auto; } p { margin: 10px 0; }</style>
+</head><body>
+<script>
+const SENT = ['I think there going to raise prices again and nobody can stop them now.', 'Its not that hard to see, its a pattern that keeps coming back every year.',
+  'The weather was definately better than last week, so we went out to the lake.', 'She said she would of gone if the train had been on time that morning.',
+  'Most people read this and move on without thinking about it at all, which is fine.', 'Your the best mod here and everybody on this forum knows it by now.',
+  'We looked at the numbers again and they still do not add up in any way we can see.', 'He has a idea about how the new system could work for everyone involved.'];
+const CLEAN = [SENT[4], SENT[6], 'The whole thing took about an hour, and most of that was waiting for the kettle.'];
+const n = +q.get('n') || 5000;
+let html = '';
+for (let i = 0; i < n; i++) html += `<div class="c"><p>${i % 25 ? CLEAN[i % 3] + ' ' + CLEAN[(i + 1) % 3] : SENT[i % 8]} Paragraph ${i}.</p><span><a href="#">reply</a> <b>user${i}</b></span></div>`;
+document.write(html);
+window.__lag.written = performance.now();
+</script>
+</body></html>

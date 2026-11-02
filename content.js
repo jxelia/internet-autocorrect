@@ -308,7 +308,8 @@
 
   function acceptable(node) {
     const parent = node.parentElement;
-    if (!parent || parent.isContentEditable || parent.closest(SKIP_SELECTOR)) return false;
+    // Not isContentEditable: reading it makes the browser work out the styles of the whole page first.
+    if (!parent || document.designMode === 'on' || parent.closest(SKIP_SELECTOR)) return false;
     const len = node.data.length;
     return len > 2 && len < 20000 && /[A-Za-z]{2}/.test(node.data);
   }
@@ -323,7 +324,12 @@
   function blockSegments(block, limit = 6000) {
     const segs = [];
     let text = '';
-    const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
+    // Other paragraphs' subtrees are rejected whole: stray text directly in <body> makes the whole page this "paragraph".
+    const own = block.matches(BLOCK_SELECTOR);
+    const walker = document.createTreeWalker(block, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
+      acceptNode: (n) => n.nodeType === Node.TEXT_NODE ? NodeFilter.FILTER_ACCEPT
+        : !own || n.matches(BLOCK_SELECTOR) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_SKIP,
+    });
     for (let n = walker.nextNode(); n; n = walker.nextNode()) {
       if (text.length > limit) break;
       const parent = n.parentElement;
@@ -564,14 +570,32 @@
   // has the trade-off; revisit if heat matters less (the old setting was rootMargin '800px 0px', no dwell, any tab).
   const DWELL_MS = 1000;
   const LOOKAHEAD = '100% 0px';
-  const inView = new Set();
+  const inView = new Set(); // within LOOKAHEAD
+  const onScreen = new Set(); // actually showing
+  const watched = new Set(); // waiting to go to the AI
   const dwell = new Map(); // block -> timer
+  // Asked and not answered yet: job id -> block. Scheduled like Firefox's page translator: what's showing first, then
+  // the way the reader is scrolling; anything left far behind, in a hidden tab or changed is taken back off the queue.
+  const instance = Math.random().toString(36).slice(2, 8);
+  const outstanding = new Map();
+  let nextJob = 0;
+  let scrollDir = 'down'; // from where paragraphs enter the zone, which needs no layout read
+  let wholePage = false; // the reader asked for every paragraph (popup): no looking ahead, nothing taken back
+  const WHOLE_PAGE_AT_ONCE = 4;
+  const belowView = new WeakSet();
+  function priorityOf(block) {
+    if (onScreen.has(block)) return 3;
+    return belowView.has(block) === (scrollDir === 'down') ? 2 : 1;
+  }
+  function takeBack(block) {
+    const st = blockState.get(block);
+    if (st?.job && st.scanOnly && !wholePage) send({ type: 'iac:cancel', id: st.job });
+  }
   function startDwell(block) {
-    if (dwell.has(block) || document.hidden) return;
+    if (dwell.has(block) || document.hidden || blockState.get(block)?.status !== 'queued') return;
     dwell.set(block, setTimeout(() => {
       dwell.delete(block);
       if (document.hidden || !inView.has(block)) return;
-      unwatch(block);
       reviewBlock(block);
     }, DWELL_MS));
   }
@@ -582,27 +606,74 @@
   function unwatch(block) {
     stopDwell(block);
     inView.delete(block);
+    onScreen.delete(block);
+    watched.delete(block);
     io.unobserve(block);
+    screenIo.unobserve(block);
   }
   const io = typeof IntersectionObserver === 'function'
     ? new IntersectionObserver((entries) => {
       for (const e of entries) {
-        if (e.isIntersecting) { inView.add(e.target); startDwell(e.target); }
-        else { inView.delete(e.target); stopDwell(e.target); }
+        const height = e.rootBounds ? e.rootBounds.height / 3 : innerHeight; // the zone is three windows tall
+        if (e.isIntersecting) {
+          if (e.boundingClientRect.top >= height) { scrollDir = 'down'; belowView.add(e.target); }
+          else { belowView.delete(e.target); if (e.boundingClientRect.bottom <= 0) scrollDir = 'up'; }
+          inView.add(e.target);
+          startDwell(e.target);
+        } else {
+          inView.delete(e.target);
+          stopDwell(e.target);
+          takeBack(e.target);
+        }
       }
     }, { rootMargin: LOOKAHEAD })
     : null;
+  const screenIo = typeof IntersectionObserver === 'function'
+    ? new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        if (e.isIntersecting) onScreen.add(e.target); else onScreen.delete(e.target);
+        const job = blockState.get(e.target)?.job;
+        if (job) send({ type: 'iac:prio', id: job, prio: e.isIntersecting ? 3 : 1 });
+      }
+    })
+    : null;
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) for (const b of [...dwell.keys()]) stopDwell(b);
-    else for (const b of inView) startDwell(b);
+    if (document.hidden) {
+      for (const b of [...dwell.keys()]) stopDwell(b);
+      for (const b of outstanding.values()) takeBack(b);
+    } else {
+      for (const b of inView) startDwell(b);
+    }
   });
+
+  // Popup: check every paragraph now, a few at a time so the background queue never overflows.
+  function checkWholePage() {
+    wholePage = true;
+    feedWholePage();
+  }
+  function feedWholePage() {
+    if (!wholePage) return;
+    for (const b of watched) {
+      if (outstanding.size >= WHOLE_PAGE_AT_ONCE) return;
+      if (blockState.get(b)?.status !== 'queued') continue;
+      stopDwell(b);
+      reviewBlock(b);
+    }
+    if (!outstanding.size) wholePage = false;
+  }
 
   function scheduleReview(block) {
     if (!aiOn() || !io) return;
     const st = blockState.get(block);
-    if (st && (st.status === 'queued' || st.status === 'sent')) return; // its answer will settle it
-    blockState.set(block, { ...(st || {}), status: 'queued' });
+    if (st?.status === 'queued') return; // its answer will settle it
+    if (st?.status === 'sent') {
+      if (st.sig === blockSegments(block).text) return;
+      if (st.job) send({ type: 'iac:cancel', id: st.job }); // the text changed: that answer is no use now
+    }
+    blockState.set(block, { ...(st || {}), status: 'queued', job: null });
+    watched.add(block);
     io.observe(block);
+    screenIo.observe(block);
     reviewBlock(block, { peek: true }); // an answer from an earlier visit settles it now, on screen or not
   }
 
@@ -687,7 +758,7 @@
   // waiting for the AI is sent now; any other waits until it scrolls into view (the find pass is for what's seen).
   async function reviewBlock(block, { peek = false } = {}) {
     if (!active) return;
-    if (!block.isConnected) { if (!peek) { blockState.delete(block); requeuePending(); } return; }
+    if (!block.isConnected) { if (!peek) { unwatch(block); blockState.delete(block); requeuePending(); } return; }
     const { text, segs } = blockSegments(block);
     const st = blockState.get(block) || {};
     if (peek && (st.sig === text || st.status !== 'queued')) return;
@@ -697,11 +768,12 @@
       if (st.edits && st.edits.length) replayEdits(text, segs, st.edits);
       settlePending(segs, st.vetoed);
       blockState.set(block, { ...st, status: 'done' });
+      unwatch(block);
       return;
     }
     const words = (text.match(/[A-Za-z]{2,}/g) || []).length;
     const foreign = P.notEnglishReason(text, pageLangOf(block));
-    const skip = foreign || words < 4 || text.length > 4000 || aiBlocksSent >= MAX_AI_BLOCKS;
+    const skip = foreign || words < 4 || text.length > 4000 || (aiBlocksSent >= MAX_AI_BLOCKS && !wholePage);
     if (peek && skip) return; // decided when it scrolls into view
     if (!peek) blockState.set(block, { sig: text, status: 'sent' });
     if (skip) {
@@ -712,6 +784,7 @@
           why: foreign || (words < 4 ? 'too short for the AI' : text.length > 4000 ? 'too long for the AI' : 'AI limit for this page reached') });
       }
       blockState.set(block, { sig: text, status: 'done' });
+      unwatch(block);
       settlePending(all);
       return;
     }
@@ -732,11 +805,18 @@
       blockState.delete(block);
       return;
     }
+    // Answers aren't kept and nothing's waiting: a peek could only miss, so don't wake the background to ask.
+    if (peek && !settings.rememberAI && !cands.some(({ fix }) => fix.state === 'pending')) return;
     if (!peek) aiBlocksSent++;
+    const job = peek ? null : `${instance}-${++nextJob}`;
+    if (job) {
+      outstanding.set(job, block);
+      blockState.set(block, { sig: text, status: 'sent', job, scanOnly: !cands.length });
+    }
     let res;
     try {
       res = await chrome.runtime.sendMessage({
-        type: 'iac:proofread', cacheOnly: peek,
+        type: 'iac:proofread', cacheOnly: peek, id: job, prio: wholePage ? 0 : priorityOf(block),
         req: {
           text, url: location.href, registerText: commentText(block),
           candidates: cands.map(({ seg, fix }) => ({
@@ -748,6 +828,20 @@
     } catch (_) {
       res = null;
     }
+    if (job) {
+      outstanding.delete(job);
+      if (res?.cancelled) { // back to waiting; it goes again if the reader comes back to it
+        aiBlocksSent--;
+        if (blockState.get(block)?.job === job) {
+          blockState.set(block, { status: 'queued' });
+          if (inView.has(block)) startDwell(block);
+        }
+        return;
+      }
+      unwatch(block);
+      feedWholePage();
+    }
+    await inputQuiet(); // a late fix never lands mid-scroll or mid-click
     if (!active || commentChoices[choiceKey(text)]) return; // left or fixed by the reader while the AI was thinking
     if (peek) {
       if (blockState.get(block)?.status !== 'queued') return; // it came into view and its own review took over
@@ -889,67 +983,145 @@
 
   // ------------------------------------------------------------------ walking
 
+  // ZERO LAG (GOALS.md §1): the page must never feel this running, on load, on scroll or on a click. New text gets a
+  // short slice straight away, in the mutation callback, so its fixes are in before it's painted; everything else runs
+  // in idle slices that step aside while the reader scrolls, clicks or types. A slice never overruns by more than one
+  // paragraph (about 0.1 ms).
+  const FRAME_BUDGET_MS = 4; // in any 16 ms, for text about to be painted
+  const IDLE_SLICE_MS = 5; // well under a frame
+  const LATE_SLICE_MS = 3; // the idle callback gave up waiting: the page is busy
+  const INPUT_QUIET_MS = 150;
   const queue = [];
+  const pendingBlocks = new Map(); // paragraph -> its text nodes, in page order
+  let walker = null; // a walk over a big page spans many slices
+  let named = new WeakSet();
+  let checked = new WeakMap(); // text node -> its paragraph and text when last checked
   let scheduled = false;
+  let lastInput = -Infinity;
+  let lastInputSent = 0;
+  let spentFrom = 0, spent = 0;
 
+  const interacting = () => performance.now() - lastInput < INPUT_QUIET_MS;
+  async function inputQuiet() {
+    while (interacting()) await new Promise((r) => setTimeout(r, INPUT_QUIET_MS));
+  }
+  function noteInput() {
+    lastInput = performance.now();
+    // The model only pauses for a tab that's waiting on it, so scrolling an ordinary page wakes nothing.
+    if (outstanding.size && lastInput - lastInputSent > 1000) {
+      lastInputSent = lastInput;
+      send({ type: 'iac:input' });
+    }
+  }
+  const INPUT_EVENTS = ['scroll', 'wheel', 'touchmove', 'pointerdown', 'keydown'];
+
+  const unwalked = () => queue.length || walker;
+  function scheduleIdle() {
+    if (scheduled) return;
+    scheduled = true;
+    // Background priority runs behind input and painting, and unlike idle callbacks isn't limited to a few a second.
+    if (window.scheduler?.postTask) scheduler.postTask(idleSlice, { priority: 'background' });
+    else (window.requestIdleCallback || setTimeout)(idleSlice, { timeout: 300 });
+  }
   function enqueue(root) {
     if (!active || !root) return;
     queue.push(root);
-    if (!scheduled) {
-      scheduled = true;
-      (window.requestIdleCallback || setTimeout)(drain, { timeout: 300 });
-    }
+    scheduleIdle();
+  }
+  function idleSlice(deadline) {
+    scheduled = false;
+    if (!active) return;
+    if (interacting()) { setTimeout(scheduleIdle, INPUT_QUIET_MS); return; }
+    drain(deadline?.didTimeout ? LATE_SLICE_MS : IDLE_SLICE_MS);
+  }
+  // Text just arrived and the next paint may show it.
+  function sliceNow() {
+    const now = performance.now();
+    if (now - spentFrom > 16) { spentFrom = now; spent = 0; }
+    if (spent >= FRAME_BUDGET_MS) { scheduleIdle(); return; }
+    drain(FRAME_BUDGET_MS - spent);
+    spent += performance.now() - now;
   }
 
-  function drain(deadline) {
-    scheduled = false;
-    // An idle callback that fired on its timeout (busy or background page) has no idle time left;
-    // still take a small slice so the queue always drains.
+  // While the page is still arriving, the last text in it may be cut off mid-word and its paragraph unfinished.
+  function stillArriving(block) {
+    if (document.readyState !== 'loading') return false;
+    let tail = document.body;
+    if (!tail) return true;
+    while (tail.lastChild) tail = tail.lastChild;
+    return block.contains(tail);
+  }
+
+  function drain(limit) {
     const started = performance.now();
-    const limit = deadline && !deadline.didTimeout && deadline.timeRemaining ? Math.max(8, deadline.timeRemaining()) : 12;
-    const textNodes = [];
-    while (queue.length && performance.now() - started < limit) {
-      const root = queue.shift();
-      if (root.nodeType === Node.TEXT_NODE) { textNodes.push(root); continue; }
-      if (root.nodeType === Node.ELEMENT_NODE && root.closest && root.closest(SKIP_SELECTOR)) continue;
-      const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
-      for (let n = walker.currentNode; n; n = walker.nextNode()) {
-        if (n.nodeType === Node.TEXT_NODE) textNodes.push(n);
-        else if (n.shadowRoot && !/^iac-/.test(n.id)) attachShadow(n.shadowRoot);
+    const left = () => limit - (performance.now() - started);
+    const walkEnd = limit * 0.3, nameEnd = limit * 0.6;
+
+    let count = 0;
+    while (unwalked() && limit - left() < walkEnd) {
+      if (!walker) {
+        const root = queue.shift();
+        if (root.nodeType === Node.TEXT_NODE) { addPending(root); continue; }
+        if (root.nodeType === Node.ELEMENT_NODE && root.closest && root.closest(SKIP_SELECTOR)) continue;
+        walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+        visit(walker.currentNode);
       }
+      let n;
+      while ((n = walker.nextNode())) {
+        visit(n);
+        if (++count % 32 === 0 && limit - left() >= walkEnd) break;
+      }
+      if (!n) walker = null;
     }
 
-    // group by paragraph so the rules (and the AI) see whole paragraphs
-    const blocks = new Map();
-    for (const n of textNodes) {
-      if (!n.isConnected || !n.parentElement) continue;
-      const b = blockOf(n);
-      if (!blocks.has(b)) blocks.set(b, []);
-      blocks.get(b).push(n);
-    }
-    const texts = new Map();
-    for (const block of blocks.keys()) {
-      const { text } = blockSegments(block);
-      texts.set(block, text);
-      if (pageNames.size < 3000) for (const n of P.namesIn(text)) pageNames.add(n);
-    }
-    for (const [block, nodes] of blocks) {
-      const text = texts.get(block);
-      const choice = commentChoices[choiceKey(text)];
-      if (choice?.left) continue; // the reader said to leave this one as written
-      const registerText = commentText(block);
-      let any = false;
-      for (const n of nodes) if (processNode(n, text, registerText)) any = true;
-      if (undone.length) restoreUndone(nodes);
-      if (choice?.edits) { placeAsked(block, choice.edits); continue; } // the reader's own fix: no AI check needed
-      if (any) scheduleReview(block);
+    // Names first, from as many paragraphs as there's time for, so one named further down still protects this one.
+    for (const block of pendingBlocks.keys()) {
+      if (named.has(block)) continue;
+      named.add(block);
+      if (pageNames.size < 3000) for (const nm of P.namesIn(blockSegments(block).text)) pageNames.add(nm);
+      if (limit - left() >= nameEnd) break;
     }
 
-    if (queue.length) {
-      scheduled = true;
-      (window.requestIdleCallback || setTimeout)(drain, { timeout: 300 });
+    let held = false;
+    for (const [block, nodes] of pendingBlocks) {
+      if (!named.has(block)) break;
+      if (stillArriving(block)) { held = true; break; } // the next mutation, or DOMContentLoaded, picks it up
+      pendingBlocks.delete(block);
+      if (block.isConnected) processBlock(block, nodes.filter((n) => n.isConnected));
+      if (left() <= 0) break;
     }
+
+    if (unwalked() || (pendingBlocks.size && !held)) scheduleIdle();
     updateBadge();
+    if (window.__iacTest) (window.__slices ||= []).push(performance.now() - started);
+  }
+
+  function visit(n) {
+    if (n.nodeType === Node.TEXT_NODE) addPending(n);
+    else if (n.shadowRoot && !/^iac-/.test(n.id)) attachShadow(n.shadowRoot);
+  }
+  function addPending(n) {
+    if (!n.isConnected || !n.parentElement) return;
+    const b = blockOf(n);
+    const seen = checked.get(n);
+    if (seen && seen.block === b && seen.data === n.data) return; // reached again through another added parent
+    if (!pendingBlocks.has(b)) pendingBlocks.set(b, []);
+    pendingBlocks.get(b).push(n);
+  }
+
+  function processBlock(block, nodes) {
+    const { text } = blockSegments(block);
+    const choice = commentChoices[choiceKey(text)];
+    if (choice?.left) return; // the reader said to leave this one as written
+    const registerText = commentText(block);
+    let any = false;
+    for (const n of nodes) {
+      if (processNode(n, text, registerText)) any = true;
+      checked.set(n, { block, data: n.data });
+    }
+    if (undone.length) restoreUndone(nodes);
+    if (choice?.edits) { placeAsked(block, choice.edits); return; } // the reader's own fix: no AI check needed
+    if (any) scheduleReview(block);
   }
 
   function attachShadow(sr) {
@@ -976,6 +1148,7 @@
         }
       }
     }
+    if (unwalked() || pendingBlocks.size) sliceNow();
   });
 
   // ------------------------------------------------------------------ right-click: fix or leave one comment
@@ -1652,13 +1825,15 @@
     return null;
   }
 
-  let moveFrame = 0;
+  // Finding the word under the pointer can force a layout, so it waits until the pointer rests.
+  const HOVER_REST_MS = 40;
+  let moveTimer = 0;
   function onMouseMove(e) {
-    if (moveFrame) return;
+    clearTimeout(moveTimer);
+    if (!trackedNodes.size && !tipFix) return;
     const { clientX: x, clientY: y } = e;
     const path = e.composedPath ? e.composedPath() : [];
-    moveFrame = requestAnimationFrame(() => {
-      moveFrame = 0;
+    moveTimer = setTimeout(() => {
       if (!active) return;
       if (tipHost && path.includes(tipHost)) return;
       const hit = fixAtPoint(x, y);
@@ -1668,7 +1843,7 @@
       } else if (tipFix) {
         scheduleHide();
       }
-    });
+    }, HOVER_REST_MS);
   }
 
   function onScroll() {
@@ -1688,19 +1863,39 @@
     document.addEventListener('mousemove', onMouseMove, { passive: true });
     window.addEventListener('scroll', onScroll, { passive: true, capture: true });
     window.addEventListener('resize', scheduleSquiggles, { passive: true });
+    for (const ev of INPUT_EVENTS) window.addEventListener(ev, noteInput, { passive: true, capture: true });
+    if (document.readyState === 'loading') {
+      // Running from document_start: what isn't parsed yet comes through the mutation observer.
+      document.addEventListener('DOMContentLoaded', () => {
+        if (!active) return;
+        seedPageNames();
+        if (settings.marks === 'squiggle') watchLayout(true);
+        sliceNow();
+      }, { once: true });
+    }
     enqueue(document.body || document.documentElement);
+    sliceNow();
   }
 
   function stop() {
     if (!active) return;
     active = false;
     observer.disconnect();
-    if (io) io.disconnect();
+    if (io) { io.disconnect(); screenIo.disconnect(); }
     document.removeEventListener('mousemove', onMouseMove);
     window.removeEventListener('scroll', onScroll, { capture: true });
     window.removeEventListener('resize', scheduleSquiggles);
+    for (const ev of INPUT_EVENTS) window.removeEventListener(ev, noteInput, { capture: true });
+    clearTimeout(moveTimer);
     watchLayout(false);
     queue.length = 0;
+    pendingBlocks.clear();
+    walker = null;
+    named = new WeakSet();
+    checked = new WeakMap();
+    watched.clear();
+    outstanding.clear();
+    wholePage = false;
     hideTip();
     restoreAll();
     drawSquiggles();
@@ -1746,6 +1941,9 @@
           replacement: u.replacement, category: u.category, source: u.source, reason: u.reason, reverted: true,
           missing: true, before: u.before, after: u.after }))], active, host: location.hostname, highlights: !!supportsHighlights });
         break;
+      case 'iac:checkPage':
+        checkWholePage();
+        break;
       case 'iac:getSelection':
         reply({ text: String(window.getSelection() || '').trim().slice(0, 2000) });
         break;
@@ -1783,7 +1981,7 @@
   // test harness only (test/chrome-shim.js sets this)
   if (window.__iacTest) {
     window.__iacState = () => ({
-      active, settings, queue: queue.length, scheduled, aiBlocksSent,
+      active, settings, queue: queue.length + pendingBlocks.size, scheduled, aiBlocksSent,
       fixes: [...trackedNodes].flatMap((nd) => (records.get(nd)?.fixes || []).map((f) => `${f.original}>${f.replacement}:${f.state}`)),
     });
   }

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Internet Autocorrect",
-  "version": "1.10.2",
+  "version": "1.11.0",
   "description": "Quietly fixes misspellings, typos and mixed-up words (their/there/they're) on the pages you read.",
   "permissions": [
     "storage",
@@ -28,10 +28,13 @@
         "copyfix.js",
         "content.js"
       ],
-      "run_at": "document_idle",
+      "run_at": "document_start",
       "all_frames": false
     }
   ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
   "action": {
     "default_popup": "popup.html",
     "default_title": "Internet Autocorrect",

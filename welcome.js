@@ -9,7 +9,7 @@
   let state = 'unavailable';
   try { if (typeof LanguageModel !== 'undefined') state = await LanguageModel.availability(OPTIONS); } catch (_) { /* unavailable */ }
   if (state === 'unavailable') {
-    note.textContent = 'Chrome’s model isn’t available on this computer, so the extension will use its rules. If you run Ollama, you can pick it in Settings.';
+    note.textContent = 'Chrome’s model isn’t available on this computer, so the extension will use its rules. You can turn on the Built-in checker, or Ollama if you run it, in Settings.';
     return;
   }
   on.hidden = false;

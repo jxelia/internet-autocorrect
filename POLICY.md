@@ -50,6 +50,21 @@ Verdicts: **apply** (mechanical slip, guards pass), **confirm** (plausible slip;
 **repair** (try the slip's real source instead), **block** (with the reason). Every verdict is written to the
 decision log (Settings → Diagnostics), so a wrong call can be traced to the question that got it wrong.
 
+**How the built-in checker answers (1.11.0, `scorer.js`).** It asks one thing: with the changed word masked out, how much
+better does the replacement fit its sentence than the original? The answer is a log-likelihood margin over the changed
+words and two neighbours each side, so a mask-language model gives the same number every time and needs no two-order
+check. Thresholds (`policy.js`), set on real text and then checked on 1,500 unseen Hacker News paragraphs:
+
+| Job | Rule | Measured |
+|---|---|---|
+| Veto a context rule's fix | margin below -3 (`SCORE_VETO`) | wrongly vetoes 2 of 80 test fixes and 0 of 112 real fires; catches 6 of 10 false fires (gemma3:4b: 3, 0, 3) |
+| Confirm a proposed confusion-pair fix | margin above 6 (`SCORE_CONFIRM`) | 0 wrong of 120 items at margins 2 to 6, keeping 100 to 117 good (gemma3:4b: 5 wrong, 36 good) |
+| Find a slip nobody proposed | margin above 10 (`SCORE_DETECT`), pairs from the confusion sets only (`slipCandidates`) | 3 flagged in 2,072 word pairs, all real; about 64% of planted slips |
+
+The margin replaces the AI's vote only. Everything it proposes still passes `judgeEdit` and the guards in §3–4. It has
+no opinion on anything outside a confusion pair, so spelling, dropped letters and restoring a broken comment stay with
+the larger models.
+
 **When a new kind of case appears**, place it with these three questions. Don't add a one-off exception. If
 none of the answers fits it, the model needs a new mechanism, gravity level or signal, and that goes here first.
 

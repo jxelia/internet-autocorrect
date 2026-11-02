@@ -66,11 +66,10 @@ const FIND_SCHEMA = {
           original: { type: 'string' },
           replacement: { type: 'string' },
           context: { type: 'string' },
-          type: { type: 'string', enum: ['wrongword', 'spelling', 'typo'] },
           deliberate: { type: 'boolean' },
           confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
         },
-        required: ['original', 'replacement', 'context', 'type', 'deliberate', 'confidence'],
+        required: ['original', 'replacement', 'context', 'deliberate', 'confidence'],
       },
       maxItems: 8,
     },
@@ -267,6 +266,8 @@ if (typeof chrome !== 'undefined' && chrome.runtime) chrome.runtime.onMessage.ad
         reply({ ok: true, text: await restore(msg.text, msg.ai, call) });
       } else if (msg.type === 'confirm') {
         reply({ ok: true, votes: await confirm(msg.items, msg.ai, call) });
+      } else if (msg.type === 'score') {
+        reply({ ok: true, margins: await IAC_Scorer.scoreAll(msg.items, chrome.runtime.getURL('')) });
       } else {
         reply({ ok: false, error: 'unknown' });
       }

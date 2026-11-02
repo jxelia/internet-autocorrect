@@ -182,6 +182,7 @@ function renderList() {
   }
   $('empty').textContent = empty;
   $('reportBar').hidden = state.tab !== 'page' || !state.tabUrl;
+  $('checkBar').hidden = $('reportBar').hidden || state.settings.ai.engine === 'off';
   if ($('reportBar').hidden) $('reportStatus').textContent = '';
 }
 
@@ -287,6 +288,7 @@ function renderSettings() {
   setSeg('aiEngine', s.ai.engine);
   $('aiExplain').textContent = {
     off: 'Only the built-in rules run. Turn on an AI to catch mistakes the rules miss and skip words people are only talking about.',
+    small: 'A small model that comes with the extension: it finds real words used by mistake (their/there, loose/lose). Works in any browser, stays cool, and pages are never sent anywhere. Chrome on-device or Ollama add it to what they catch.',
     nano: 'Uses Gemini Nano, the small model built into Chrome. It runs on this computer; pages are never sent anywhere.',
     ollama: 'Uses a model in the free Ollama app on this computer (ollama.com). Pages never leave your computer.',
   }[s.ai.engine];
@@ -397,13 +399,14 @@ async function refreshAiStatus() {
     action.hidden = !act;
     if (act) { action.textContent = act.label; action.onclick = act.run; }
   };
+  if (ai.engine === 'small') return set('ok', 'Ready. Runs on this computer.');
   if (ai.engine === 'nano') {
     switch (st && st.state) {
       case 'available': return set('ok', 'Ready. Runs on this computer.');
       case 'downloadable': return set('warn', 'One-time model download needed (a few GB).', { label: 'Download', run: downloadNano });
       case 'downloading': return set('warn', 'Downloading the model…', { label: 'Check again', run: refreshAiStatus });
-      case 'unavailable': return set('bad', 'This computer can’t run Chrome’s built-in AI. Try the Ollama app instead.');
-      default: return set('bad', 'Not available in this version of Chrome (needs Chrome 138+ on a desktop). Try Ollama.');
+      case 'unavailable': return set('bad', 'This computer can’t run Chrome’s built-in AI. Try Built-in or the Ollama app instead.');
+      default: return set('bad', 'Not available in this version of Chrome (needs Chrome 138+ on a desktop). Try Built-in or Ollama.');
     }
   }
   // ollama
@@ -683,6 +686,11 @@ if (!chrome.runtime.getManifest().permissions?.includes('downloads')) {
   $('reportBar').remove();
   $('downloadTrace').remove();
 }
+$('checkPage').addEventListener('click', async (e) => {
+  e.target.disabled = true;
+  e.target.textContent = 'Checking the whole page…';
+  await chrome.tabs.sendMessage(state.tabId, { type: 'iac:checkPage' }).catch(() => {});
+});
 $('sendReport')?.addEventListener('click', () => sendReport('reportStatus', false));
 $('copyReport')?.addEventListener('click', () => copyReport('reportStatus'));
 $('copyTrace').addEventListener('click', () => copyReport('traceStatus'));

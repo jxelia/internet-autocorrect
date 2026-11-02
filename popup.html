@@ -44,6 +44,9 @@
     </div>
     <ul id="list"></ul>
     <p class="empty" id="empty"></p>
+    <div class="reportBar" id="checkBar">
+      <button class="link" id="checkPage" title="Ask the AI about every paragraph now, not only the ones you reach. Slower and warmer while it runs.">Check the whole page</button>
+    </div>
     <div class="reportBar" id="reportBar">
       <span>Something wrong on this page?</span>
       <button class="link send" id="sendReport" aria-label="Save report" title="Save this page’s report (Downloads › internet-autocorrect-reports)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2l1.9 1.9M16 2l-1.9 1.9M9 7.1V6a3 3 0 1 1 6 0v1.1"/><path d="M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6z"/><path d="M12 20v-9M6.5 13H3M21 13h-3.5M6 9.5L3.5 8M18 9.5L20.5 8M6.6 17.5L3.5 19M17.4 17.5L20.5 19"/></svg></button>
@@ -91,6 +94,7 @@
     <h2>AI checker</h2>
     <div class="seg" id="aiEngine" role="radiogroup">
       <button data-v="off">Off</button>
+      <button data-v="small">Built-in</button>
       <button data-v="nano">Chrome on-device</button>
       <button data-v="ollama">Ollama app</button>
     </div>

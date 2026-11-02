@@ -150,10 +150,19 @@ lowercase (casual writing, people's own style), and capitals don't always mark n
 | *You will get use to it* in a casual post on X (2026-11-03) | Both are real words and no rule covered it; the AI couldn't change it either: *use → used* was judged a swap with no slip behind it (*finish → finished*, the same slip, was judged grammar and blocked) | Sound (*d* lost before *t*) and sentence (only a participle fits after *be* or *get*) | The lost *-ed* before *to*: *use, suppose, oppose, expose, accustom* after *be* or *get*, inverted questions (*am I suppose to*), and sentence-opening *I use to play*. Fixed in casual writing too (1.10.1, POLICY.md §2) | Wrong word |
 | Why is the AI never allowed to make grammar changes? (2026-11-03; the user left the call to Claude) | The block protects dialect and stops small models over-correcting, but it also stopped real slips of the *get use to* kind in other verbs | Sentence (only a participle fits), Writer and setting (dialect) | Dropped *-ed* goes to the AI's two-way check where nothing else can fit: *have* + object, *be*/*get* + *by*. Pronoun case, agreement and other endings stay blocked; *he been walk* is dialect and stays (1.10.2, POLICY.md §0) | Wrong word |
 | *readin', writin', 'rithmatic* | Eye dialect | Writer and setting | Elision marks protect a word | — (left alone) |
+| "There can be 0 lag… load with whatever fixes need to be implemented as if they're already part of the page", including on scroll and buttons (2026-11-03) | Text was walked after load in long tasks, and hover and AI placement ran during input | Engineering (no language question) | 1.11.0: `document_start`, fixes written in the slice the parser delivers them (4 ms budget), rest in 5 ms idle slices, input pauses AI work and late placement. 5000 paragraphs: longest slice 9 ms, none over 16 ms | — |
+| Can the project use another extension's engine tiers (ThreadCast, 2026-11-03)? | Only large models answered "which word fits", and they are slow and hot | Real-word error correction | 1.11.0: Built-in engine, a 65 MB masked-word scorer for confusion pairs: fewer wrong fixes than gemma3:4b and far more good ones on this job, 90 ms a question, no download | — |
 | *definately* in quotes / italics | Word mentioned, not used | Meaning and use | Use-vs-mention guards; since 1.7.22 only when the evidence shows a mention or echo (`the word "definately"`, `"definately" lol`), not for scare quotes or emphasis | — (left alone) |
 
 ## 6. Open questions and ideas
 
+- **Ask the user: `rememberAI` (1.11.0).** The goal is pages that load with fixes already in place. Rule fixes do. AI
+  fixes on a page seen before can too, but only if Remember the AI's answers is on, and it's off by default for
+  privacy (1.8.2). Fixes on a first visit can't be there at load, since no model answers before the paint. Left off
+  until the user decides.
+- **Not adopted, 2026-11-03:** Harper (Apache-2.0, 20 MB WASM): precision unmeasured, many false-positive reports;
+  would be a candidate source behind `judgeEdit` if measured. Chrome's Proofreader API: no evidence it has shipped.
+  Report: `reports/Efficient on-device AI for proofreading.md`.
 - **Going public (the user, 2026-11-03: "a long way from workable... need to get it in public too").** 1.10.0 did the
   blockers (other languages, measured precision, no Claude in the interface, reading backs off, copies opt-in, store
   files; the policy is public in its own repo, this one stays private). Open for the user: the store slot, and whether the listing goes ahead with more real-page use first.
