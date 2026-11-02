@@ -32,7 +32,11 @@ proposed it (rules, AI, spellchecker), so new cases are handled without new word
    (a regular ending on a word whose real form is irregular: *fastly → fast*, *goed → went*). If no slip
    mechanism connects the two forms, it is not a slip:
    - *grammar*: pronoun case (*they → them*), agreement (*is → are*), word endings (*walk → walks*). These
-     vary by dialect and usage, so they are never changed.
+     vary by dialect and usage, so they are never changed. One exception, a **dropped *-ed*** where only the
+     participle can stand: after *have* with an object following (*I have finish the report*), or after *be* or
+     *get* with *by* following (*was kill by a car*). The AI must still agree both ways. What follows is what rules
+     out a noun or bare verb that belongs there: *have work to do*, *the only constant is change*, *all I did was walk
+     by the river*. *He been walk* is dialect and stays.
    - *unexplained*: two real words with nothing linking them (*is → its*). Not applied. If the AI thought the word
      was wrong, the words a real slip could have come from are tried instead (*is → us*: *u* is next to *i*).
 2. **Gravity: what does it cost the reader?** *meaning* (a different real word), *legibility* (a non-word),

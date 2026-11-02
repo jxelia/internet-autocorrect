@@ -33,6 +33,13 @@ const CASES = [
   ["It's crazy they chose Frankfurt Stock Exchange huge win for the EU", null],
   ["So the ai hype cycle is coming to an end.", null],
   ["ive been there, that's what happened lol", null],
+  // a dropped -ed vs a noun or bare verb that belongs there
+  ["I have finish the report and sent it to him yesterday.", "I have finished the report and sent it to him yesterday."],
+  ["The man was kill by a car on that road last year.", "The man was killed by a car on that road last year."],
+  ["I have work to do tomorrow, so I can't come out with you.", null],
+  ["All I did was walk by the river and think about it for a while.", null],
+  ["The only constant in this job is change, and you learn to live with it.", null],
+  ["She walk the dog every morning before she go to work.", null],
 ];
 
 const apply = (t, fixes) => {

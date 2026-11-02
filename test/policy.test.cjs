@@ -83,6 +83,19 @@ const JUDGE = [
   ['I ate an apple today.', 'an', 'a', 'block'],
   ['I ate a apple today.', 'a', 'an', 'confirm'],
   ['The rain started falling down fastly.', 'fastly', 'fast', 'confirm'],
+  // A dropped -ed, only where the participle is the one thing that fits (POLICY.md §2)
+  ['I have finish the report already.', 'finish', 'finished', 'confirm'],
+  ['We never had stop it before.', 'stop', 'stopped', 'confirm'],
+  ['The man was kill by a car last year.', 'kill', 'killed', 'confirm'],
+  ['She has been hurry by them all week.', 'hurry', 'hurried', 'confirm'],
+  ['I have work to do tomorrow.', 'work', 'worked', 'block'],
+  ['They have love for each other.', 'love', 'loved', 'block'],
+  ['The only constant is change.', 'change', 'changed', 'block'],
+  ['We got help from a friend.', 'help', 'helped', 'block'],
+  ['All I did was walk by the river.', 'walk', 'walked', 'block'],
+  ['He been walk the dog every day.', 'walk', 'walked', 'block'],
+  ['She walk the dog every day.', 'walk', 'walked', 'block'],
+  ['I have finish the report already.', 'finish', 'finishes', 'block'],
 ];
 for (const [o, r, want] of [['fastly', 'fast', 'wordform'], ['goed', 'went', 'wordform'], ['quickly', 'quick', 'grammar'], ['bases', 'basis', 'grammar'], ['peple', 'people', 'misspelling']]) {
   const m = P.mechanism(o, r, isWord);

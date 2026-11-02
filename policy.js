@@ -525,7 +525,7 @@
         const close = ow.length === rw.length && ow.every((w, i) =>
           levenshtein(w, rw[i]) <= 2 || soundex(w) === soundex(rw[i]));
         const ofHave = /\b(could|would|should|must|might) of\b/.test(ow.join(' '));
-        if (!close && !ofHave) return 'not a sound-alike or look-alike swap';
+        if (!close && !ofHave && !(ow.length === 1 && rw.length === 1 && isRegularPast(ow[0], rw[0]))) return 'not a sound-alike or look-alike swap';
       } else {
         const apostropheOnly = letters(original) === letters(replacement);
         const doubled = /^(\w+)\s+\1$/i.test(original);
@@ -822,6 +822,9 @@
     S('he him his himself'), S('she her hers herself'), S('who whom whose'), S('you your yours yourself')];
   const pronounCase = (a, b) => PRONOUN_SETS.some((set) => set.has(a) && set.has(b));
   const stem = (w) => w.replace(/(ing|ed|es|s|d|ly)$/, '');
+  // walk/walked, use/used, stop/stopped, hurry/hurried: stem() misses the last three
+  const isRegularPast = (a, b) => a.length > 2 && (/e$/.test(a) ? b === a + 'd' : b === a + 'ed' || b === a + a.slice(-1) + 'ed' ||
+    (/[^aeiou]y$/.test(a) && b === a.slice(0, -1) + 'ied'));
 
   // Short words are only swapped for other common short words (the closed class), never rare dictionary entries.
   const FUNCTION_WORDS = S(`a an the of to in on at by for from with as is am are was be it its us we me my he him
@@ -843,10 +846,32 @@
     if (!isWord) return 'unknown'; // no dictionary here (content script): background.js has already judged it
     if (!(isWord(a) || CONTRACTIONS.has(a))) return 'misspelling';
     if (keyboardSlip(a, b)) return 'keyboard';
+    if (isRegularPast(a, b)) return 'grammar';
     return 'unexplained';
   }
 
-  const GRAVITY = { soundalike: 'meaning', keyboard: 'meaning', unexplained: 'meaning', grammar: 'meaning',
+  // A dropped -ed where only the participle can stand: "I have finish the report", "he was kill by a car" (POLICY.md §2).
+  // Everything else with a word ending stays grammar. What must follow rules out the bare word being right: a noun after
+  // have or be has no object ("have work to do", "the only constant is change"), and "been" alone is dialect ("he been walk").
+  const OBJECT_NEXT = S('the a an my your his her our their this that these those it them him me us');
+  const PERFECT_AUX = S("have has had i've you've we've they've ive youve weve theyve");
+  const PASSIVE_AUX = S("am is are was were be being isn't aren't wasn't weren't i'm you're we're they're he's she's get gets got getting");
+  function droppedEd(edit, ctx) {
+    const a = norm(edit.original).trim(), b = norm(edit.replacement).trim();
+    if (!ctx.at || !isRegularPast(a, b) || (ctx.isWord && !(ctx.isWord(a) && ctx.isWord(b)))) return false;
+    const before = (ctx.text.slice(Math.max(0, ctx.at.start - 80), ctx.at.start).split(/[.!?\n]/).pop() || '')
+      .toLowerCase().replace(/\u2019/g, "'").match(/[a-z']+/g) || [];
+    const next = (/^\s+([a-z']+)/i.exec(ctx.text.slice(ctx.at.end, ctx.at.end + 24)) || [])[1]?.toLowerCase();
+    let k = before.length - 1;
+    if (before[k] === 'not' || before[k] === 'never') k--;
+    const aux = before[k];
+    if (aux === 'been') return before[k - 1] === 'have' || before[k - 1] === 'has' || before[k - 1] === 'had' ? next === 'by' : false;
+    if (PERFECT_AUX.has(aux)) return OBJECT_NEXT.has(next);
+    if (!PASSIVE_AUX.has(aux) || next !== 'by') return false;
+    return !before.slice(0, k).some((w) => /^(do|did|does|doing)$/.test(w)); // "all I did was walk by the river"
+  }
+
+  const GRAVITY = { droppeded: 'form', soundalike: 'meaning', keyboard: 'meaning', unexplained: 'meaning', grammar: 'meaning',
     misspelling: 'legibility', wordform: 'form', apostrophe: 'cosmetic', spacing: 'cosmetic', doubled: 'cosmetic' };
 
   /**
@@ -860,7 +885,8 @@
    * ctx is checkAiEdit's ctx (text, at, isWord, known, mentioned, casualMode, registerText).
    */
   function judgeEdit(edit, ctx) {
-    const mech = mechanism(edit.original, edit.replacement, ctx.isWord);
+    const found = mechanism(edit.original, edit.replacement, ctx.isWord);
+    const mech = found === 'grammar' && droppedEd(edit, ctx) ? 'droppeded' : found;
     const out = { mechanism: mech, gravity: GRAVITY[mech] || 'meaning', register: registerOf(ctx.registerText || ctx.text) };
     const why = checkAiEdit(edit, ctx);
     if (why) return { ...out, verdict: 'block', why };
