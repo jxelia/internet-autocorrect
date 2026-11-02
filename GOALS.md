@@ -28,7 +28,9 @@ disagree, the user wins: update this file.
   everyday name and a one-line example (§4). Linguistics terms stay in POLICY.md and the code.
 - **Zero lag, as if no extension were running** (the user, 2026-11-03: "there can be 0 lag for the page. it should
   be like there is no extension running - just load with whatever fixes need to be implemented as if they're already
-  part of the page"). Pages load at full speed with their fixes already in place, not appearing afterwards.
+  part of the page"). Pages load at full speed with their fixes already in place, not appearing afterwards. This
+  covers scrolling and using page elements such as buttons too: "non-existent no matter when and how much the work is
+  done in the background".
 
 ## 2. What "context" means: the levels a reader uses
 
