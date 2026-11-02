@@ -145,6 +145,12 @@ lowercase (casual writing, people's own style), and capitals don't always mark n
 
 ## 6. Open questions and ideas
 
+- **Going public (the user, 2026-11-03: "a long way from workable... need to get it in public too").** Blockers
+  found: no language check (the rules run on non-English pages), reports and popup text name Claude, `downloads`
+  permission only serves reports, no privacy policy or first-run screen, no measured real-world precision. Open for
+  the user: what "public" means (store listing, public repo, or both; a store listing doesn't need the repo public,
+  and the repo is private over copying worries, with `CLAUDE.md` in its history), and whether Nano's reading pass stays
+  on by default for strangers' computers.
 - **To revisit with the user (raised 2026-10-27, late at night; remind them):** what to save from a first visit so
   later visits start better prepared. Asked: should an AI check started on a page finish and be saved even after
   the user scrolls away, leaves, or goes to a site the extension is off for? (Yes: the background already does
