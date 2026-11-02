@@ -115,16 +115,40 @@ async function nanoStatus() {
   }
 }
 
-async function nanoAsk(system, user, schema) {
-  if (!nanoBase[system]) {
-    nanoBase[system] = await LanguageModel.create({ ...NANO_OPTS, initialPrompts: [{ role: 'system', content: system }] });
-  }
-  const session = await nanoBase[system].clone();
+// The base sessions stay loaded: creating one is the slow part, so giving up on a call must not throw them away.
+function nanoSession(system) {
+  nanoBase[system] ??= LanguageModel.create({ ...NANO_OPTS, initialPrompts: [{ role: 'system', content: system }] })
+    .catch((e) => { delete nanoBase[system]; throw e; });
+  return nanoBase[system];
+}
+
+async function nanoAsk(system, user, schema, _ai, req) {
+  if (req?.cancelled) throw new Error('cancelled');
+  const session = await (await nanoSession(system)).clone();
+  const stop = () => session.destroy();
+  req?.stops.add(stop);
   try {
+    if (req?.cancelled) throw new Error('cancelled');
     return JSON.parse(await session.prompt(user, { responseConstraint: schema }));
   } finally {
+    req?.stops.delete(stop);
     session.destroy();
   }
+}
+
+// Load the model before the clock starts on a call (background.js timedAI).
+async function warm(ai) {
+  if (ai.engine === 'ollama') return;
+  await Promise.all([FIND_PROMPT, CHOOSE_PROMPT].map(nanoSession));
+}
+
+// Calls in progress by request id, so background.js can give up on one and leave the model and other calls alone.
+const requests = new Map();
+function cancel(rid) {
+  const req = requests.get(rid);
+  if (!req) return;
+  req.cancelled = true;
+  for (const stop of req.stops) stop();
 }
 
 async function ollamaStatus({ url }) {
@@ -139,9 +163,14 @@ async function ollamaStatus({ url }) {
   }
 }
 
-async function ollamaAsk(system, user, schema, { url, model }) {
+async function ollamaAsk(system, user, schema, { url, model }, req) {
+  if (req?.cancelled) throw new Error('cancelled');
+  const abort = new AbortController();
+  const stop = () => abort.abort();
+  req?.stops.add(stop);
   const res = await fetch(url.replace(/\/$/, '') + '/api/chat', {
     method: 'POST',
+    signal: abort.signal,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model,
@@ -152,15 +181,14 @@ async function ollamaAsk(system, user, schema, { url, model }) {
     }),
   });
   if (!res.ok) throw new Error('Ollama HTTP ' + res.status);
-  const data = await res.json();
+  const data = await res.json().finally(() => req?.stops.delete(stop));
   return JSON.parse(data.message.content);
 }
 
 // ---------------------------------------------------------------- the two jobs
 
-async function proofread(req, ai) {
-  const ask = (system, user, schema) =>
-    ai.engine === 'ollama' ? ollamaAsk(system, user, schema, ai) : nanoAsk(system, user, schema);
+async function proofread(req, ai, call) {
+  const ask = (system, user, schema) => (ai.engine === 'ollama' ? ollamaAsk : nanoAsk)(system, user, schema, ai, call);
 
   // 1. rule fixes: original vs fixed sentence, both orders; veto only on a consistent "keep it"
   const checks = [];
@@ -193,9 +221,8 @@ async function proofread(req, ai) {
 }
 
 // items: [{ original, replacement, sentence, fixedSentence }] -> [{ first, second, ok }]
-async function confirm(items, ai) {
-  const ask = (system, user, schema) =>
-    ai.engine === 'ollama' ? ollamaAsk(system, user, schema, ai) : nanoAsk(system, user, schema);
+async function confirm(items, ai, call) {
+  const ask = (system, user, schema) => (ai.engine === 'ollama' ? ollamaAsk : nanoAsk)(system, user, schema, ai, call);
   const votes = [];
   for (const s of items || []) {
     const v = { first: null, second: null, ok: false };
@@ -211,12 +238,12 @@ async function confirm(items, ai) {
   return votes;
 }
 
-async function restore(text, ai) {
+async function restore(text, ai, call) {
   const ask = ai.engine === 'ollama' ? ollamaAsk : nanoAsk;
   const lost = Policy.missingLetters(text);
   const hint = lost.length ? `The letters ${lost.join(', ')} almost never appear in this paragraph, so they are probably what went missing. ` +
     'Put them back wherever a word is broken or looks wrong, also at the start or end of a word.\n\n' : '';
-  const r = await ask(RESTORE_PROMPT, `Paragraph:\n<<<\n${text}\n>>>\n\n${hint}Reply with JSON only.`, RESTORE_SCHEMA, ai);
+  const r = await ask(RESTORE_PROMPT, `Paragraph:\n<<<\n${text}\n>>>\n\n${hint}Reply with JSON only.`, RESTORE_SCHEMA, ai, call);
   return typeof r.text === 'string' ? r.text : '';
 }
 
@@ -224,26 +251,34 @@ async function restore(text, ai) {
 
 if (typeof chrome !== 'undefined' && chrome.runtime) chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   if (!msg || msg.target !== 'iac-ai') return false;
+  if (msg.type === 'cancel') { cancel(msg.rid); reply({ ok: true }); return false; }
+  const call = { cancelled: false, stops: new Set() };
+  if (msg.rid) requests.set(msg.rid, call);
   (async () => {
     try {
-      if (msg.type === 'status') {
+      if (msg.type === 'warm') {
+        await warm(msg.ai);
+        reply({ ok: true });
+      } else if (msg.type === 'status') {
         reply(msg.engine === 'ollama' ? await ollamaStatus(msg.ai) : await nanoStatus());
       } else if (msg.type === 'proofread') {
-        reply({ ok: true, result: await proofread(msg.req, msg.ai) });
+        reply({ ok: true, result: await proofread(msg.req, msg.ai, call) });
       } else if (msg.type === 'restore') {
-        reply({ ok: true, text: await restore(msg.text, msg.ai) });
+        reply({ ok: true, text: await restore(msg.text, msg.ai, call) });
       } else if (msg.type === 'confirm') {
-        reply({ ok: true, votes: await confirm(msg.items, msg.ai) });
+        reply({ ok: true, votes: await confirm(msg.items, msg.ai, call) });
       } else {
         reply({ ok: false, error: 'unknown' });
       }
     } catch (e) {
-      for (const k of Object.keys(nanoBase)) delete nanoBase[k];
+      if (!call.cancelled) for (const k of Object.keys(nanoBase)) delete nanoBase[k];
       reply({ ok: false, error: String(e.message || e) });
+    } finally {
+      requests.delete(msg.rid);
     }
   })();
   return true;
 });
 
 // Exposed for the test harness (test/ai-eval.cjs runs these prompts against Ollama).
-if (typeof module !== 'undefined') module.exports = { proofread, confirm, restore, RESTORE_PROMPT, FIND_PROMPT, CHOOSE_PROMPT };
+if (typeof module !== 'undefined') module.exports = { proofread, confirm, restore, warm, cancel, requests, RESTORE_PROMPT, FIND_PROMPT, CHOOSE_PROMPT };

@@ -137,6 +137,26 @@ async function dictionary() {
 const matchCase = (orig, repl) => (/^[A-Z]/.test(orig) ? repl.charAt(0).toUpperCase() + repl.slice(1) : repl);
 const withTimeout = (p, ms) => Promise.race([p, new Promise((r) => setTimeout(() => r({ ok: false, error: 'timeout' }), ms))]);
 
+// A model call with a time limit. The model is loaded first, outside the limit: loading isn't the paragraph's fault.
+// Too slow: only this call is cancelled and the model stays loaded, or every next call would have to load it again and
+// time out too. The model is closed only if it doesn't respond to that (a stuck session slows every later call).
+const WARM_LIMIT_MS = 120000;
+let nextRid = 0;
+async function timedAI(msg, ms) {
+  const warmed = await withTimeout(toAI({ type: 'warm', ai: msg.ai }), WARM_LIMIT_MS);
+  if (warmed?.error === 'timeout') {
+    if (!askedRunning) await resetAI();
+    return { ok: false, error: 'model not ready' };
+  }
+  const rid = ++nextRid;
+  const res = await withTimeout(toAI({ ...msg, rid }), ms);
+  if (res?.error === 'timeout') {
+    const stopped = await withTimeout(toAI({ type: 'cancel', rid }), 3000);
+    if (stopped?.error === 'timeout' && !askedRunning) await resetAI();
+  }
+  return res;
+}
+
 // Judge everything the AI and the spellchecker proposed (policy.judgeEdit), ask the AI to confirm the
 // ones that need it, and keep a trace of every decision. Returns { edits, trace }.
 async function review(text, rawEdits, suggestions, ai, casualMode, registerText) {
@@ -184,9 +204,9 @@ async function review(text, rawEdits, suggestions, ai, casualMode, registerText)
   }
 
   if (ask.length) {
-    const res = await withTimeout(toAI({ type: 'confirm', ai, items: ask.map((a) => ({
+    const res = await timedAI({ type: 'confirm', ai, items: ask.map((a) => ({
       original: a.edit.original, replacement: a.edit.replacement, sentence: a.sentence, fixedSentence: a.fixedSentence,
-    })) }), AI_LIMIT_MS);
+    })) }, AI_LIMIT_MS);
     const votes = res && res.ok ? res.votes : [];
     const groups = new Map();
     ask.forEach((a, i) => {
@@ -449,7 +469,7 @@ function finish(job, res) { answer(job, res); inflight.delete(job.key); }
 // HEAT CAP (1.8.1): after each model call, reading paragraphs (scan-only jobs) waits REST_FACTOR times as long as
 // the call took (at most REST_MAX_MS), so the chip is busy about 1/7 of the time (~14%) instead of flat out.
 // Paragraphs with a rule fix waiting skip the wait: they're few and short, and the reader sees "Checking".
-// Answers come later, not different. A call gets AI_LIMIT_MS before it's given up (and the model reset).
+// Answers come later, not different. A call gets AI_LIMIT_MS before it's given up (timedAI).
 // GOALS.md §6; lower REST_FACTOR if heat matters less (1.7.26 had 1, at most 10 s).
 const REST_FACTOR = 6;
 const REST_MAX_MS = 90000;
@@ -488,10 +508,8 @@ async function pump() {
       }) : [];
       const hints = await getHints();
       const t0 = Date.now();
-      const call = toAI({ type: 'proofread', ai, req: { ...job.req, hints } });
-      const res = await withTimeout(call, AI_LIMIT_MS);
-      // Too slow: the model may be stuck (a stuck on-device session slows every later call), so start it afresh.
-      if (res && res.error === 'timeout' && !askedRunning) await resetAI();
+      const res = await timedAI({ type: 'proofread', ai, req: { ...job.req, hints } }, AI_LIMIT_MS);
+      if (res?.ok) appendTrace([{ t: Date.now(), url: job.req.url, kind: 'ai', verdict: 'answered', ms: Date.now() - t0, find, text: job.req.text.slice(0, 80) }]);
       if (res && res.ok && res.result) {
         const { casualMode = 'auto' } = await chrome.storage.sync.get('casualMode');
         const out = await review(job.req.text, res.result.edits, suggestions, ai, casualMode, job.req.registerText);
@@ -527,8 +545,7 @@ async function restoreParagraph(req) {
   askedRunning++;
   let res;
   try {
-    res = await withTimeout(toAI({ type: 'restore', ai, text: req.text }), RESTORE_LIMIT_MS);
-    if (res?.error === 'timeout') await resetAI();
+    res = await timedAI({ type: 'restore', ai, text: req.text }, RESTORE_LIMIT_MS);
   } catch (e) {
     res = { ok: false, error: String(e.message || e) };
   } finally {
