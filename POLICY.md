@@ -197,13 +197,15 @@ Signals that a form is a **slip**:
 
 Some spellings are conventional in casual internet writing: *would of, alot, everytime, dont, im*. The same
 spelling can be a slip from a careful writer or a deliberate style from a casual one, so it is never judged by the
-word alone. It is judged by the writing around it (its **register**):
+word alone. It is judged by the writing around it (its **register**), which means the writer's whole comment or
+post where the site's markup shows where that starts and ends (Reddit so far), and otherwise the paragraph. Quoted
+text is someone else's writing, so it doesn't count, and a paragraph inside a quote is judged on its own:
 
 - **Casual signs**: lowercase sentence starts, a lowercase *i*, *lol/tbh/ngl*, emoji, `!!!`, no final full stop,
   several other missing apostrophes.
 - **Careful signs**: capitalised sentences, apostrophes used correctly elsewhere, semicolons, longer words.
 - **The writer knows the standard form**: *would've* or *would have*, *every time*, *a lot* or another correct
-  apostrophe elsewhere in the same text. Then the casual form here is a slip.
+  apostrophe elsewhere in the same comment. Then the casual form here is a slip.
 
 The default is to **leave it**. A casual form is corrected only with positive evidence: the writer shows they know
 the standard form, or the text is clearly careful. A dropped apostrophe (*dont, ive, im*) needs careful writing on

@@ -116,6 +116,7 @@ lowercase (casual writing, people's own style), and capitals don't always mark n
 |---|---|---|---|---|
 | *would of* fixed in a casual comment | Same spelling is a slip for some writers, a style for others | Writer and setting (register) | Casual forms judged by register and whether the writer knows the standard (POLICY.md §4) | Wrong word |
 | *ive been there… lol* | Dropped apostrophe in casual writing is style | Register | Dropped apostrophes fixed only in careful writing | Typo |
+| *lol ngl i dont care* then a tidy paragraph with *dont* | One paragraph can look careful while the writer is casual, and *would've* in one paragraph shows they know the form in the next | Writer and setting (the whole comment) | Register and "knows the standard" read the whole comment, without quotes (Reddit; paragraph elsewhere) | Typo / Wrong word |
 | *its OpenAI's fault* | *its* before something that can't be owned | Sentence | `ITS_NOT_OWNED` | Wrong word |
 | *is → its* proposed by the AI | No slip turns one into the other | Mechanism (error analysis) | Unexplained swaps never made; repaired to a real slip source | — |
 | *an apple → a apple* (AI) | Article must follow the next sound | Sound (allomorphy) | `articleFor`; any a/an edit against it is blocked | Wrong word |
@@ -188,6 +189,5 @@ lowercase (casual writing, people's own style), and capitals don't always mark n
     the machine or a backup). Measure the savings before choosing.
 - More frames like *on a … basis*: *in a … manner*, *at the … level*, *for all intents and purposes* (eggcorns
   are the same level). A small, curated frame list with the slot's allowed forms, grown from real reports.
-- Register per whole comment rather than per paragraph (needs each site's comment container).
 - Categories are for readers; levels are for logic. If Wrong word grows too broad to be useful in the popup
   filter, ask the user before splitting it, and name any split the way a reader would.
