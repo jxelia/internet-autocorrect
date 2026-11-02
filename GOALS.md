@@ -26,6 +26,9 @@ disagree, the user wins: update this file.
   is around them (POLICY.md §4: *What quote marks are doing*, *How names are recognised*), for every kind of change.
 - **Plain, friendly categories on the front end.** However technical the reason, the reader sees a short,
   everyday name and a one-line example (§4). Linguistics terms stay in POLICY.md and the code.
+- **Zero lag, as if no extension were running** (the user, 2026-11-03: "there can be 0 lag for the page. it should
+  be like there is no extension running - just load with whatever fixes need to be implemented as if they're already
+  part of the page"). Pages load at full speed with their fixes already in place, not appearing afterwards.
 
 ## 2. What "context" means: the levels a reader uses
 
