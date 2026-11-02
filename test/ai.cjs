@@ -178,15 +178,17 @@ async function proofread(req, ai) {
   }
 
   // 2. what the rules missed
-  let edits = [];
+  let edits = [], error = '';
   if (req.find !== false) {
     try {
       const r = await ask(FIND_PROMPT, findPrompt(req.text, req.hints), FIND_SCHEMA);
       edits = Array.isArray(r.edits) ? r.edits.slice(0, 8) : [];
-    } catch (_) { /* nothing found */ }
+    } catch (e) {
+      error = String(e.message || e); // no answer isn't "nothing found": background.js logs it and doesn't save it
+    }
   }
 
-  return { checks, edits };
+  return { checks, edits, error };
 }
 
 // items: [{ original, replacement, sentence, fixedSentence }] -> [{ first, second, ok }]

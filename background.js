@@ -496,7 +496,9 @@ async function pump() {
         const out = await review(job.req.text, res.result.edits, suggestions, ai, casualMode, job.req.registerText);
         res.result.edits = out.edits;
         res.result.trace = out.trace;
-        remember(job.key, res);
+        // The model couldn't be reached (Ollama not running…): log it, and don't save "nothing found" as its answer.
+        if (res.result.error) { noAnswer(job, res.result.error); res.noAnswer = true; }
+        else remember(job.key, res);
       }
       if (!res || !res.ok || !res.result) noAnswer(job, res?.error || 'no reply');
       finish(job, res || { ok: false, error: 'no reply' });
@@ -522,7 +524,7 @@ async function restoreParagraph(req) {
   const res = await withTimeout(toAI({ type: 'restore', ai, text: req.text }), RESTORE_LIMIT_MS);
   if (!res || !res.ok) {
     appendTrace([{ t: Date.now(), url: req.url, kind: 'ai', verdict: 'asked: no answer', why: res?.error || 'no reply', text: req.text.slice(0, 300) }]);
-    return { ok: false, error: res?.error || 'no reply' };
+    return { ok: false, error: ai.engine === 'ollama' && /fetch/i.test(res?.error || '') ? 'ollama' : res?.error || 'no reply' };
   }
   const edits = IAC_Policy.restoredEdits(req.text, res.text, (w) => dict.has(w));
   appendTrace([{ t: Date.now(), url: req.url, kind: 'ai', verdict: 'asked', text: req.text.slice(0, 300), corrected: String(res.text).slice(0, 300), edits: edits.length }]);

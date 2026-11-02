@@ -1073,6 +1073,7 @@
     }
     toast(placed ? `Fixed ${placed} ${placed === 1 ? 'place' : 'places'}`
       : failed === 'off' ? 'Turn on an AI checker in Settings first'
+      : failed === 'ollama' ? 'The AI checker is set to Ollama, which isn’t running'
       : failed === 'timeout' ? 'The AI took too long' : failed ? `The AI gave no answer (${failed})` : 'The AI found nothing to fix');
   }
 
