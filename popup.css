@@ -27,6 +27,8 @@ body {
   background: var(--bg);
   color: var(--text);
 }
+/* Inner border just inside the popup window, whose own frame Chrome draws (from Mute List for Reddit). Fixed, so it stays on the window's edge while the page scrolls. */
+body.popup::after { content: ""; position: fixed; inset: 3px; z-index: 10; border: 1px solid var(--line); border-radius: 10px; pointer-events: none; }
 header {
   display: flex; align-items: center; justify-content: space-between;
   padding: 12px 14px 10px;
