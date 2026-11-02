@@ -16,6 +16,7 @@ const DEFAULTS = {
 const AI_DEFAULTS = DEFAULTS.ai;
 
 const $ = (id) => document.getElementById(id);
+const TAB_KEY = 'iac:tab'; // localStorage, since it's read before the first paint
 const state = { tab: 'page', filter: null, search: null, settings: DEFAULTS, page: [], log: [], tabId: null, host: null, reachable: false };
 
 function el(tag, props = {}, ...children) {
@@ -115,6 +116,13 @@ async function refreshPage() {
 
 // ---------------------------------------------------------------- render
 
+function showTab() {
+  for (const b of document.querySelectorAll('.tabs button')) b.classList.toggle('active', b.dataset.tab === state.tab);
+  $('listView').hidden = state.tab !== 'page' && state.tab !== 'history';
+  $('settingsView').hidden = state.tab !== 'settings';
+  $('reportView').hidden = state.tab !== 'report';
+}
+
 function render() {
   const s = state.settings;
   $('enabled').checked = s.enabled;
@@ -123,11 +131,7 @@ function render() {
   $('siteEnabled').disabled = !state.host || !s.enabled;
   document.querySelector('.site').style.opacity = s.enabled ? 1 : 0.5;
 
-  for (const b of document.querySelectorAll('.tabs button')) b.classList.toggle('active', b.dataset.tab === state.tab);
-
-  $('listView').hidden = state.tab !== 'page' && state.tab !== 'history';
-  $('settingsView').hidden = state.tab !== 'settings';
-  $('reportView').hidden = state.tab !== 'report';
+  showTab();
   if (state.tab === 'settings') renderSettings();
   else if (state.tab === 'report') renderReports();
   else renderList();
@@ -702,6 +706,7 @@ $('searchInput').addEventListener('keydown', (e) => {
 for (const b of document.querySelectorAll('.tabs button')) {
   b.addEventListener('click', () => {
     state.tab = b.dataset.tab;
+    try { localStorage.setItem(TAB_KEY, state.tab); } catch (_) { /* not critical */ }
     render();
     if (state.tab === 'settings') refreshAiStatus();
   });
@@ -724,4 +729,11 @@ document.addEventListener('mousemove', () => document.body.classList.remove('poi
 // AI fixes arrive a moment after the rules, so keep this page's list fresh while the popup is open.
 setInterval(() => { if (state.tab === 'page' && !document.hidden) refreshPage(); }, 1500);
 
-load();
+// Reopen on the tab it was closed on. Shown now, so the first paint and popup-tabs.js start on it.
+try {
+  const tab = localStorage.getItem(TAB_KEY);
+  if (document.querySelector(`.tabs button[data-tab="${tab}"]`)) state.tab = tab;
+} catch (_) { /* not critical */ }
+showTab();
+
+load().then(() => { if (state.tab === 'settings') refreshAiStatus(); });
