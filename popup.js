@@ -123,8 +123,6 @@ function render() {
   $('siteEnabled').disabled = !state.host || !s.enabled;
   document.querySelector('.site').style.opacity = s.enabled ? 1 : 0.5;
 
-  $('pageCount').textContent = state.page.filter((f) => !f.reverted).length;
-  $('historyCount').textContent = state.log.length;
   for (const b of document.querySelectorAll('.tabs button')) b.classList.toggle('active', b.dataset.tab === state.tab);
 
   $('listView').hidden = state.tab !== 'page' && state.tab !== 'history';
