@@ -150,8 +150,7 @@ lowercase (casual writing, people's own style), and capitals don't always mark n
 
 - **Going public (the user, 2026-11-03: "a long way from workable... need to get it in public too").** 1.10.0 did the
   blockers (other languages, measured precision, no Claude in the interface, reading backs off, copies opt-in, store
-  files). Open for the user: a public address for `PRIVACY.md` (the repo is private over copying worries, and a store
-  listing doesn't need the repo public), the store slot, and whether the listing goes ahead with more real-page use first.
+  files; the policy is public in its own repo, this one stays private). Open for the user: the store slot, and whether the listing goes ahead with more real-page use first.
 - **To revisit with the user (raised 2026-10-27, late at night; remind them):** what to save from a first visit so
   later visits start better prepared. Asked: should an AI check started on a page finish and be saved even after
   the user scrolls away, leaves, or goes to a site the extension is off for? (Yes: the background already does

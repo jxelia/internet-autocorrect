@@ -49,7 +49,7 @@ Corrects spelling and word slips in the text of web pages the user reads, and ma
 ## Data disclosure
 
 - Collected: **Website content** is processed locally only and never leaves the device, so per the form's definition nothing is collected or transmitted to the developer. If asked, tick "Website content" as handled locally, and certify: not sold, not used for unrelated purposes, not used for creditworthiness.
-- Privacy policy URL: needs a public address for `PRIVACY.md`.
+- Privacy policy URL: https://github.com/jxelia/internet-autocorrect-privacy/blob/main/PRIVACY.md
 
 ## Screenshots
 

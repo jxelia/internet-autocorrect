@@ -13,3 +13,5 @@ Last updated: 3 November 2026
 - **What syncs:** settings are kept in `chrome.storage.sync`. If Chrome sync is on, Google syncs them between your browsers under your account. That includes the never-change list and the sites you've turned it off for.
 - **One optional download:** *Borrowed word lists* fetches Wikipedia's list of common misspellings from wikipedia.org when you ask for it. No page text is sent.
 - **Who it shares data with:** nobody. Data is never sold or transferred.
+
+Questions: open an issue at https://github.com/jxelia/internet-autocorrect-privacy/issues
