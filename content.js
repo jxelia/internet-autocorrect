@@ -1073,7 +1073,7 @@
     }
     toast(placed ? `Fixed ${placed} ${placed === 1 ? 'place' : 'places'}`
       : failed === 'off' ? 'Turn on an AI checker in Settings first'
-      : failed ? 'The AI gave no answer' : 'The AI found nothing to fix');
+      : failed === 'timeout' ? 'The AI took too long' : failed ? `The AI gave no answer (${failed})` : 'The AI found nothing to fix');
   }
 
   // A small note at the bottom of the window: the only thing on the page while the AI works.
@@ -1741,6 +1741,8 @@
         break;
       case 'iac:comment': {
         const blocks = active ? commentBlocks(menuTarget) : [];
+        trace({ kind: 'user', verdict: msg.action, why: active ? `${blocks.length} paragraphs` : 'extension off on this page' });
+        if (!active) toast('Internet Autocorrect is off on this page');
         if (blocks.length) (msg.action === 'fix' ? fixComment : leaveComment)(blocks);
         reply({ ok: !!blocks.length });
         break;

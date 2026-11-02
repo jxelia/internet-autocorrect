@@ -520,9 +520,12 @@ async function restoreParagraph(req) {
   if (ai.engine === 'off') return { ok: false, error: 'off' };
   const dict = await dictionary();
   const res = await withTimeout(toAI({ type: 'restore', ai, text: req.text }), RESTORE_LIMIT_MS);
-  if (!res || !res.ok) return { ok: false, error: res?.error || 'no reply' };
+  if (!res || !res.ok) {
+    appendTrace([{ t: Date.now(), url: req.url, kind: 'ai', verdict: 'asked: no answer', why: res?.error || 'no reply', text: req.text.slice(0, 300) }]);
+    return { ok: false, error: res?.error || 'no reply' };
+  }
   const edits = IAC_Policy.restoredEdits(req.text, res.text, (w) => dict.has(w));
-  appendTrace([{ t: Date.now(), url: req.url, kind: 'ai', verdict: 'asked', text: req.text.slice(0, 300), corrected: String(res.text).slice(0, 300) }]);
+  appendTrace([{ t: Date.now(), url: req.url, kind: 'ai', verdict: 'asked', text: req.text.slice(0, 300), corrected: String(res.text).slice(0, 300), edits: edits.length }]);
   return { ok: true, edits };
 }
 
@@ -543,6 +546,7 @@ function makeMenus() {
     chrome.contextMenus.create({ id: 'iac-leave', title: 'Leave this comment as written', contexts });
   });
 }
+makeMenus(); // every worker start, so the menu is there whichever way the extension was reloaded
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (!tab?.id) return;
   chrome.tabs.sendMessage(tab.id, { type: 'iac:comment', action: info.menuItemId === 'iac-fix' ? 'fix' : 'leave' }, { frameId: 0 })
@@ -659,7 +663,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
 // Chrome doesn't put a new version's content scripts into tabs that are already open, and the old ones are cut
 // off (content.js notices within a couple of seconds and undoes itself). Inject the new version so open tabs
 // keep working without a refresh.
-chrome.runtime.onInstalled.addListener(() => { makeMenus(); setTimeout(injectIntoOpenTabs, 3000); });
+chrome.runtime.onInstalled.addListener(() => setTimeout(injectIntoOpenTabs, 3000));
 async function injectIntoOpenTabs() {
   const scripts = chrome.runtime.getManifest().content_scripts || [];
   for (const tab of await chrome.tabs.query({ url: ['http://*/*', 'https://*/*'] })) {
