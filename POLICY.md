@@ -265,7 +265,8 @@ by the sentence.
 1. **Policy guards** (instant, every word): anything protected by section 3 or 4 is skipped before any rule runs.
 2. **Word-list rules** (instant): unambiguous misspellings and typos are fixed straight away.
 3. **Context rules** (instant): homophone patterns. With an AI on, these are double-checked (step 5).
-4. **AI proposals** (optional, local): the model reads each visible paragraph once, with this policy as its
+   *Since 1.12.0 steps 4 to 6 use a language model only when the reader asks (Check the whole page). While browsing, the built-in checker answers step 5 and finds confusion-pair slips; edits it can't vote on aren't made.*
+4. **AI proposals** (optional, local): the model reads each paragraph it's asked about once, with this policy as its
    instructions, and must say for each proposal whether it could be deliberate and how sure it is. Each proposal
    is then judged by §0: grammar and unexplained swaps are never made, and every other non-mechanical proposal
    must be confirmed by the AI in both orders.

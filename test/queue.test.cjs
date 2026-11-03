@@ -36,7 +36,7 @@ for (const f of ['policy.js', 'engine.js']) (0, eval)(fs.readFileSync(__dirname 
 
 const send = (msg) => new Promise((resolve) => { if (onMessage(msg, { tab: { id: 1 } }, resolve) !== true) resolve(); });
 const para = (n) => `The paragraph number ${n} has a slipp in it and we want to read it now.`;
-const ask = (id, n, prio = 1, candidates = []) => send({ type: 'iac:proofread', id, prio, req: { text: para(n), url: 'u', candidates } });
+const ask = (id, n, prio = 1, candidates = []) => send({ type: 'iac:proofread', id, prio, req: { text: para(n), url: 'u', candidates, asked: true } });
 const sleep = (ms) => new Promise((r) => realTimeout(r, ms));
 let failed = 0, passed = 0;
 const check = (name, ok, more = '') => { if (ok) passed++; else { failed++; console.log('FAIL', name, more); } };
@@ -95,7 +95,7 @@ const cand = { original: 'their', replacement: 'there', sentence: 's', fixedSent
   const out = await review('I went to teh shop and saw teh dog there today.', [
     { original: 'teh', replacement: 'the', context: 'to teh shop', type: 'spelling', deliberate: false, confidence: 'high' },
     { original: 'there', replacement: 'their', context: 'dog there today', type: 'wrongword', deliberate: false, confidence: 'high' },
-  ], [], { engine: 'ollama' }, 'auto', '');
+  ], [], { engine: 'ollama' }, 'auto', '', true);
   check('confirm is asked one at a time', calls.filter((c) => c.type === 'confirm').every((c) => c.items.length === 1));
   check('a slow confirm stops the rest', confirms <= 2, String(confirms));
   check('review still finishes', Array.isArray(out.edits));
@@ -118,9 +118,27 @@ const cand = { original: 'their', replacement: 'there', sentence: 's', fixedSent
   stores.sync.ai = { engine: 'ollama', read: true, model: 'x' };
   model = async (m) => (m.type === 'score' ? { ok: false } : { ok: true, result: { checks: [{ n: 1, ok: true }], edits: [] } });
   calls.length = 0;
-  const fell = await send({ type: 'iac:proofread', id: 'k3', prio: 1, req: { text: 'They will go over their by the big lake on the weekend.', url: 'u',
+  const fell = await send({ type: 'iac:proofread', id: 'k3', prio: 1, req: { text: 'They will go over their by the big lake on the weekend.', url: 'u', asked: true,
     candidates: [{ original: 'their', replacement: 'there', pre: 'They will go over ', suf: ' by the big lake on the weekend.', sentence: 's', fixedSentence: 'f' }] } });
   check('falls back to the language model if the checker fails', fell.ok && calls.some((c) => c.type === 'proofread'), JSON.stringify(fell).slice(0, 160));
+
+  // Browsing never runs a language model, whichever engine is set, and doesn't wait for a still page.
+  calls.length = 0;
+  model = async (m) => (m.type === 'score' ? { ok: true, margins: m.items.map(() => -20) } : { ok: true, result: { checks: [], edits: [{ original: 'slipp', replacement: 'slip', context: 'a slipp in', type: 'spelling', deliberate: false, confidence: 'high' }] } });
+  await send({ type: 'iac:input' });
+  const browsed = send({ type: 'iac:proofread', id: 'b1', prio: 1, req: { text: para(40), url: 'u',
+    candidates: [{ original: 'their', replacement: 'there', pre: 'x ', suf: ' y', sentence: 's', fixedSentence: 'f' }] } });
+  await sleep(10);
+  check('browsing does not wait for scrolling to stop', calls.length > 0);
+  const browsing = await browsed;
+  check('browsing gets the checker\'s answer', browsing.ok && browsing.result.checks.length === 1, JSON.stringify(browsing).slice(0, 160));
+  check('browsing asks no language model', calls.every((c) => c.type === 'score'), calls.map((c) => c.type).join());
+  model = async () => ({ ok: false, error: 'checker down' });
+  calls.length = 0;
+  const down = await send({ type: 'iac:proofread', id: 'b2', prio: 1, req: { text: para(41), url: 'u',
+    candidates: [{ original: 'their', replacement: 'there', pre: 'x ', suf: ' y', sentence: 's', fixedSentence: 'f' }] } });
+  check('with the checker down, still no language model', !calls.some((c) => c.type !== 'score'), calls.map((c) => c.type).join());
+  check('and that is not saved as an answer', down.noAnswer === true, JSON.stringify(down).slice(0, 160));
 
   console.log(`${passed} passed, ${failed} failed`);
   Deno.exit(failed ? 1 : 0);

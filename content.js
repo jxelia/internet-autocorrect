@@ -6,8 +6,8 @@
  * from tripping over foreign DOM nodes.
  *
  * Text is handled per paragraph ("block"): the rule engine sees the whole paragraph so it can tell when
- * a word is being talked about, and when an AI engine is on, each visible paragraph is sent to it
- * (on this computer only) to confirm the rule fixes and find what the rules missed.
+ * a word is being talked about, and the built-in checker (on this computer only) confirms the rule fixes and finds
+ * real words used by mistake in paragraphs near the view. A language model runs only when the reader asks.
  */
 (() => {
   'use strict';
@@ -18,7 +18,7 @@
   const P = window.IAC_Policy;
   const CATS = Object.keys(CATEGORIES);
 
-  const AI_DEFAULTS = { engine: 'off', verify: true, read: true, url: 'http://localhost:11434', model: '' };
+  const AI_DEFAULTS = { engine: 'small', verify: true, read: true, url: 'http://localhost:11434', model: '' };
   const DEFAULTS = {
     enabled: true,
     categories: { wrongword: true, spelling: true, typo: true, regional: true },
@@ -563,13 +563,14 @@
 
   // ------------------------------------------------------------------ AI review (per paragraph)
 
-  // HEAT FIX (1.7.26), not a design choice: Gemini Nano reading every paragraph near the window, in every tab,
-  // kept the Mac hot. A paragraph goes to the AI only once it has stayed within one window-height of the view
-  // (LOOKAHEAD, so the fix is usually in place before it's seen) for DWELL_MS while the tab is visible: paragraphs
-  // flung past and background tabs are skipped. Cost: This page lists only what was near the reader. GOALS.md §6
-  // has the trade-off; revisit if heat matters less (the old setting was rootMargin '800px 0px', no dwell, any tab).
-  const DWELL_MS = 1000;
-  const LOOKAHEAD = '100% 0px';
+  // 1.12.0: as you browse this is the built-in checker on the CPU, never a language model (background.js, pump), so it
+  // can reach well ahead and fixes are in place before they're seen. A paragraph goes once it has stayed within
+  // LOOKAHEAD_SCREENS of the view for DWELL_MS while the tab is visible: only paragraphs flung past and background tabs
+  // are skipped. This page lists only what was near the reader. GOALS.md §6 has the history.
+  const DWELL_MS = 150;
+  const LOOKAHEAD_SCREENS = 2;
+  const LOOKAHEAD = `${LOOKAHEAD_SCREENS * 100}% 0px`;
+  const browsedOnly = new Set(); // answered without a language model, which Check the whole page then goes back to
   const inView = new Set(); // within LOOKAHEAD
   const onScreen = new Set(); // actually showing
   const watched = new Set(); // waiting to go to the AI
@@ -614,7 +615,7 @@
   const io = typeof IntersectionObserver === 'function'
     ? new IntersectionObserver((entries) => {
       for (const e of entries) {
-        const height = e.rootBounds ? e.rootBounds.height / 3 : innerHeight; // the zone is three windows tall
+        const height = e.rootBounds ? e.rootBounds.height / (LOOKAHEAD_SCREENS * 2 + 1) : innerHeight; // the zone in windows
         if (e.isIntersecting) {
           if (e.boundingClientRect.top >= height) { scrollDir = 'down'; belowView.add(e.target); }
           else { belowView.delete(e.target); if (e.boundingClientRect.bottom <= 0) scrollDir = 'up'; }
@@ -649,6 +650,13 @@
   // Popup: check every paragraph now, a few at a time so the background queue never overflows.
   function checkWholePage() {
     wholePage = true;
+    // A language model hasn't read what the built-in checker already answered: those go again.
+    if (settings.ai.engine === 'nano' || settings.ai.engine === 'ollama') {
+      for (const b of browsedOnly) {
+        if (b.isConnected) { blockState.set(b, { status: 'queued' }); watched.add(b); }
+      }
+    }
+    browsedOnly.clear();
     feedWholePage();
   }
   function feedWholePage() {
@@ -818,7 +826,7 @@
       res = await chrome.runtime.sendMessage({
         type: 'iac:proofread', cacheOnly: peek, id: job, prio: wholePage ? 0 : priorityOf(block),
         req: {
-          text, url: location.href, registerText: commentText(block),
+          text, url: location.href, registerText: commentText(block), asked: wholePage && !peek,
           candidates: cands.map(({ seg, fix }) => ({
             original: fix.original, replacement: fix.replacement,
             ...P.sentenceAround(text, seg.start + fix.start, seg.start + fix.end, fix.replacement),
@@ -828,6 +836,7 @@
     } catch (_) {
       res = null;
     }
+    const seen = onScreen.has(block);
     if (job) {
       outstanding.delete(job);
       if (res?.cancelled) { // back to waiting; it goes again if the reader comes back to it
@@ -841,7 +850,7 @@
       unwatch(block);
       feedWholePage();
     }
-    await inputQuiet(); // a late fix never lands mid-scroll or mid-click
+    if (seen) await inputQuiet(); // a late fix never lands under the reader mid-scroll or mid-click; one ahead just goes in
     if (!active || commentChoices[choiceKey(text)]) return; // left or fixed by the reader while the AI was thinking
     if (peek) {
       if (blockState.get(block)?.status !== 'queued') return; // it came into view and its own review took over
@@ -871,6 +880,8 @@
       if (verdict.get(i + 1) === false) vetoed.add(fix.original + '→' + fix.replacement + '@' + (seg.start + fix.start));
     });
     blockState.set(block, { sig: text, status: 'done', edits, vetoed });
+    if (wholePage) browsedOnly.delete(block);
+    else browsedOnly.add(block);
 
     const touched = new Set();
     cands.forEach(({ seg, rec, fix }, i) => {
@@ -1908,6 +1919,7 @@
     traced.clear();
     aiBlocksSent = 0;
     blockState = new WeakMap();
+    browsedOnly.clear();
     if (shouldRun()) {
       await Promise.all([loadDict(), loadUndone(), loadRegional()]);
       start();

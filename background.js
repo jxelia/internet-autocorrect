@@ -2,7 +2,7 @@
 importScripts('policy.js', 'engine.js');
 // Owns the correction log, the toolbar badge, the AI queue, and the learned word list.
 const MAX_LOG = 1000;
-const AI_DEFAULTS = { engine: 'off', verify: true, read: true, url: 'http://localhost:11434', model: '' };
+const AI_DEFAULTS = { engine: 'small', verify: true, read: true, url: 'http://localhost:11434', model: '' };
 const PROMOTE_AFTER = 3; // AI confirmations before a learned spelling fix applies instantly
 const WIKIPEDIA_RAW =
   'https://en.wikipedia.org/w/index.php?title=Wikipedia:Lists_of_common_misspellings/For_machines&action=raw';
@@ -159,7 +159,7 @@ async function timedAI(msg, ms) {
 
 // Judge everything the AI and the spellchecker proposed (policy.judgeEdit), ask the AI to confirm the
 // ones that need it, and keep a trace of every decision. Returns { edits, trace }.
-async function review(text, rawEdits, suggestions, ai, casualMode, registerText) {
+async function review(text, rawEdits, suggestions, ai, casualMode, registerText, asked = false) {
   const dict = await dictionary();
   const isWord = (w) => dict.has(w);
   const P = IAC_Policy;
@@ -211,7 +211,7 @@ async function review(text, rawEdits, suggestions, ai, casualMode, registerText)
     const swaps = ask.filter((a) => P.confusionPair(a.edit.original, a.edit.replacement));
     const margins = swaps.length ? await scoreAll(swaps.map((a) => ({ pre: a.pre, a: a.edit.replacement, b: a.edit.original, suf: a.suf }))) : null;
     const votes = [];
-    let modelDown = ai.engine === 'small';
+    let modelDown = !asked; // the language model only runs when the reader asked (see pump)
     for (const a of ask) {
       const m = margins ? margins[swaps.indexOf(a)] : undefined;
       if (typeof m === 'number') { votes.push({ first: 'built-in', second: Math.round(m * 10) / 10, ok: m > P.SCORE_CONFIRM }); continue; }
@@ -442,9 +442,15 @@ let running = false;
 async function proofread(req, cacheOnly = false, id = null, prio = 1) {
   const ai = await aiSettings();
   const { casualMode = 'auto' } = await chrome.storage.sync.get('casualMode');
-  const key = hashKey(JSON.stringify([req.text, req.candidates.map((c) => c.original + '→' + c.replacement),
-    ai.engine, ai.model || '', !!ai.read, casualMode, req.registerText || '', await logicVersion()]));
-  const hit = (await keepAnswers()) ? (await loadCache()).get(key) : null;
+  const version = await logicVersion();
+  const keyFor = (asked) => hashKey(JSON.stringify([req.text, req.candidates.map((c) => c.original + '→' + c.replacement),
+    ai.engine, ai.model || '', !!ai.read, casualMode, req.registerText || '', version, asked]));
+  const asked = !!req.asked && usesLanguageModel(ai);
+  req = { ...req, asked };
+  const key = keyFor(asked);
+  const cache = (await keepAnswers()) ? await loadCache() : null;
+  // What the language model said when the reader asked is the better answer, so browsing reuses it. Not the reverse.
+  const hit = cache ? cache.get(key) || (asked ? null : cache.get(keyFor(true))) : null;
   // A paragraph the model couldn't answer is remembered too, so a revisit doesn't wait again; retried after a while.
   if (hit && !(hit.res.noAnswer && Date.now() - hit.t > NO_ANSWER_RETRY_MS)) return { ...hit.res, cached: true };
   if (cacheOnly) return { ok: false, error: 'not cached' };
@@ -505,7 +511,10 @@ function finish(job, res) { answer(job, res); inflight.delete(job.key); }
 // Paragraphs with a rule fix waiting skip the wait: they're few and short, and the reader sees "Checking".
 // Answers come later, not different. A call gets AI_LIMIT_MS before it's given up (timedAI).
 // GOALS.md §6; lower REST_FACTOR if heat matters less (1.7.26 had 1, at most 10 s).
+// 1.12.0: only calls the reader asked for get here. See pump().
 const REST_FACTOR = 6;
+const SCORER_REST_FACTOR = 2; // the built-in checker: a third of one CPU core at most, only while new text comes up
+const usesLanguageModel = (ai) => ai.engine === 'nano' || ai.engine === 'ollama';
 const REST_MAX_MS = 90000;
 const AI_LIMIT_MS = 15000;
 let restUntil = 0;
@@ -584,7 +593,9 @@ async function pump() {
   running = true;
   while (queue.length) {
     if (askedRunning) { await new Promise((r) => setTimeout(r, 500)); continue; }
-    await inputPause();
+    // The language model fills the GPU that also scrolls the page, so it waits for a still page. The built-in checker
+    // is on one CPU thread and keeps going, which is what puts fixes in place before the reader gets there.
+    if (queue.some((j) => j.req.asked)) await inputPause();
     if (!queue.length) break;
     // Newest first (what the reader is looking at now), and paragraphs with a rule fix waiting for the AI before
     // scan-only ones: only the waiting fixes show as "Checking with the AI".
@@ -602,11 +613,12 @@ async function pump() {
       // Nothing in the paragraph could be a slip: skip the "find" pass (rule checks still run).
       const dict = await dictionary();
       const isWord = (w) => dict.has(w);
-      // The read-everything pass only when the reader turned it on (it's what keeps the model busy and the computer
-      // warm); otherwise the AI only answers the rules' own questions.
-      const small = ai.engine === 'small'; // the built-in checker alone, no language model
+      // 1.12.0, from first principles: a language model over every paragraph is what kept the computer hot, however
+      // it was rationed. So browsing runs the rules and the built-in checker on the CPU, on every engine, and the
+      // language model runs only for job.req.asked (the reader pressed Check the whole page). GOALS.md §6.
+      const llm = !!job.req.asked;
       const reading = !!ai.read && IAC_Policy.worthChecking(job.req.text, isWord);
-      const find = reading && !small && !(await readingPaused());
+      const find = reading && llm && !(await readingPaused());
       if (!reading && !job.req.candidates.length) { finish(job, { ok: true, result: { checks: [], edits: [] }, skipped: true }); continue; }
       job.req.find = find;
       const suggestions = find ? IAC_Policy.spellSuggestions(job.req.text, isWord, {
@@ -621,17 +633,17 @@ async function pump() {
       const cands = job.req.candidates;
       // Rule questions: the built-in checker when it can answer, the language model when it can't.
       const margins = cands.length ? await scoreAll(cands.map((c) => ({ pre: c.pre, a: c.replacement, b: c.original, suf: c.suf }))) : null;
-      const rulesRes = cands.length && !margins && !small ? await timedAI({ type: 'proofread', ai, req: { ...asked, find: false } }, AI_LIMIT_MS) : null;
+      const rulesRes = cands.length && !margins && llm ? await timedAI({ type: 'proofread', ai, req: { ...asked, find: false } }, AI_LIMIT_MS) : null;
       const detected = reading ? await detectSlips(job.req.text, isWord) : [];
       const readRes = find && (!rulesRes || rulesRes.ok) ? await timedAI({ type: 'proofread', ai, req: { ...asked, candidates: [], find: true } }, AI_LIMIT_MS) : null;
       if (readRes || rulesRes) await noteAiOutcome(readRes || rulesRes, find);
       const checks = margins ? margins.map((m, n) => ({ n: n + 1, ok: m >= -IAC_Policy.SCORE_VETO })) : rulesRes?.result?.checks || [];
       const res = rulesRes && !rulesRes.ok ? rulesRes
-        : { ok: true, result: { checks, edits: [...detected, ...(readRes?.result?.edits || [])], error: readRes && !readRes.ok ? readRes.error : readRes?.result?.error || '' } };
+        : { ok: true, result: { checks, edits: [...detected, ...(readRes?.result?.edits || [])], error: readRes && !readRes.ok ? readRes.error : readRes?.result?.error || (cands.length && !margins && !rulesRes ? 'the built-in checker did not answer' : '') } };
       if (res?.ok) appendTrace([{ t: Date.now(), url: job.req.url, kind: 'ai', verdict: 'answered', ms: Date.now() - t0, find, text: job.req.text.slice(0, 80) }]);
       if (res && res.ok && res.result) {
         const { casualMode = 'auto' } = await chrome.storage.sync.get('casualMode');
-        const out = await review(job.req.text, res.result.edits, suggestions, ai, casualMode, job.req.registerText);
+        const out = await review(job.req.text, res.result.edits, suggestions, ai, casualMode, job.req.registerText, llm);
         res.result.edits = out.edits;
         res.result.trace = out.trace;
         // The model couldn't be reached (Ollama not running…): log it, and don't save "nothing found" as its answer.
@@ -640,7 +652,7 @@ async function pump() {
       }
       if (!res || !res.ok || !res.result) noAnswer(job, res?.error || 'no reply');
       finish(job, res || { ok: false, error: 'no reply' });
-      restUntil = Date.now() + Math.min((Date.now() - t0) * REST_FACTOR, REST_MAX_MS);
+      restUntil = Date.now() + Math.min((Date.now() - t0) * (llm ? REST_FACTOR : SCORER_REST_FACTOR), REST_MAX_MS);
     } catch (e) {
       noAnswer(job, String(e.message || e));
       finish(job, { ok: false, error: String(e.message || e) });
@@ -827,9 +839,19 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
 // keep working without a refresh.
 chrome.runtime.onInstalled.addListener(({ reason }) => {
   setTimeout(injectIntoOpenTabs, 3000);
+  if (reason === 'update') turnOnBuiltIn();
   syncCopyScript();
   if (reason === 'install') chrome.tabs.create({ url: chrome.runtime.getURL('welcome.html') });
 });
+
+// Once, on the update to 1.12.0: Off was the only way to stay cool before it, and Built-in is cool. Off stays a choice.
+async function turnOnBuiltIn() {
+  const { engineMoved } = await chrome.storage.local.get('engineMoved');
+  if (engineMoved) return;
+  await chrome.storage.local.set({ engineMoved: true });
+  const { ai } = await chrome.storage.sync.get('ai');
+  if (ai?.engine === 'off') await chrome.storage.sync.set({ ai: { ...ai, engine: 'small' } });
+}
 
 // Corrected copies (clipboard.js) run inside the page, so they're only registered when the reader turned them on.
 const COPY_SCRIPT = 'iac-copies';

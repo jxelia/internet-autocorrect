@@ -12,7 +12,7 @@ const DEFAULTS = {
   fixCopies: false,
   keepLog: false,
   region: 'off',
-  ai: { engine: 'off', verify: true, read: true, url: 'http://localhost:11434', model: '' },
+  ai: { engine: 'small', verify: true, read: true, url: 'http://localhost:11434', model: '' },
 };
 const AI_DEFAULTS = DEFAULTS.ai;
 
@@ -287,10 +287,10 @@ function renderSettings() {
   // AI
   setSeg('aiEngine', s.ai.engine);
   $('aiExplain').textContent = {
-    off: 'Only the built-in rules run. Turn on an AI to catch mistakes the rules miss and skip words people are only talking about.',
-    small: 'A small model that comes with the extension: it finds real words used by mistake (their/there, loose/lose). Works in any browser, stays cool, and pages are never sent anywhere. Chrome on-device or Ollama add it to what they catch.',
-    nano: 'Uses Gemini Nano, the small model built into Chrome. It runs on this computer; pages are never sent anywhere.',
-    ollama: 'Uses a model in the free Ollama app on this computer (ollama.com). Pages never leave your computer.',
+    off: 'Only the built-in rules run. Turn on Built-in to catch real words used by mistake and skip words people are only talking about.',
+    small: 'A small model that comes with the extension: as you browse, it finds real words used by mistake (their/there, loose/lose). Stays cool, works in any browser, and pages are never sent anywhere.',
+    nano: 'Built-in runs as you browse. Gemini Nano, the small model built into Chrome, reads only when you ask: Check the whole page, or right-click › Fix this comment. It would heat the computer if it ran on its own. Pages are never sent anywhere.',
+    ollama: 'Built-in runs as you browse. A model in the free Ollama app (ollama.com) reads only when you ask: Check the whole page, or right-click › Fix this comment. It would heat the computer if it ran on its own. Pages never leave this computer.',
   }[s.ai.engine];
   $('aiStatusRow').hidden = s.ai.engine === 'off';
   $('ollamaFields').hidden = s.ai.engine !== 'ollama';
