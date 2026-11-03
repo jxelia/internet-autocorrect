@@ -116,20 +116,28 @@ for (const [text, original, replacement, want, alts] of JUDGE) {
 const JOKE1 = 'I think we need to take at brake at this point. Let’s apply the breaks and sloe down a little.';
 const JOKE2 = 'I m at a loss to u derst a d why auto orre t has been updated to orre t for spelling aused y people hitti g the spa e at I stead of the key oard.';
 for (const [text, corrected, want] of [
-  [JOKE1, 'I think we need to take a break at this point. Let’s apply the brakes and slow down a little.', ['at brake>a break', 'breaks>brakes', 'sloe>slow']],
+  [JOKE1, 'I think we need to take a break at this point. Let’s apply the brakes and slow down a little.', ['at>a', 'brake>break', 'breaks>brakes', 'sloe>slow']],
   [JOKE2, 'I’m at a loss to understand why autocorrect has been updated to correct for spelling caused by people hitting the space at instead of the keyboard.',
-    ['I m>I’m', 'u derst a d>understand', 'auto orre t>autocorrect', 'orre t>correct', 'aused y>caused by', 'hitti g>hitting', 'spa e>space', 'I stead>instead', 'key oard.>keyboard.']],
+    ['I m>I’m', 'u derst a d>understand', 'auto orre t>autocorrect', 'orre t>correct', 'aused>caused', 'y>by', 'hitti g>hitting', 'spa e>space', 'I stead>instead', 'key oard.>keyboard.']],
   ['My freind said it was good.', 'My friend said it was good.', ['freind>friend']],
   ['That car was good.', 'That automobile was great.', []], // synonyms: too far apart
   ['My freind said it was good.', 'My frrend said it was good.', []], // not a word
   ['My freind said it was good.', 'Sounds like a nice restaurant, glad you liked it.', []], // an answer, not the text
-  ['My freind said so', 'my friend said so.', ['My freind>my friend']], // capital and full stop alone aren't edits
+  ['My freind said so', 'my friend said so.', ['freind>friend']], // capital and full stop alone aren't edits
 ]) {
   const got = P.restoredEdits(text, corrected, isWord);
   const placed = got.every((e) => text.slice(e.start, e.end) === e.original);
   const list = got.map((e) => e.original + '>' + e.replacement);
   if (placed && JSON.stringify(list) === JSON.stringify(want)) pass++;
   else { fail++; console.log(`FAIL restoredEdits ${text.slice(0, 30)}: ${JSON.stringify(list)}, wanted ${JSON.stringify(want)}`); }
+}
+// The built-in checker over the model's result: best swap per word, only past SCORE_DETECT
+{
+  const found = [{ start: 4, end: 9, original: 'brake', replacement: 'break' }, { start: 12, end: 17, original: 'threw', replacement: 'through' }, { start: 12, end: 17, original: 'threw', replacement: 'thorough' }, { start: 20, end: 24, original: 'hear', replacement: 'here' }];
+  const list = P.slipEdits(found, [12, 11, 15, 9]).map((e) => e.replacement);
+  if (JSON.stringify(list) === '["break","thorough"]') pass++; else { fail++; console.log('FAIL slipEdits', list); }
+  const fixed = P.applyEdits('take at brake now', [{ start: 8, end: 13, replacement: 'break' }, { start: 5, end: 7, replacement: 'a' }]);
+  if (fixed === 'take a break now') pass++; else { fail++; console.log('FAIL applyEdits', fixed); }
 }
 const LOST = 'I m at a loss to u derst a d why auto  orre t has t ee updated to  orre t for spelling g  istakes  aused y people with thi k thu  s hitti g the spa e  at I stead of the keys o the  otto  row of the key oard.';
 for (const [text, want] of [[LOST, 'bcmn'], [JOKE1, ''], ['The quick brown fox jumps over the lazy dog and then the whole pack of very clever hounds gives chase across the wide open field.', '']]) {

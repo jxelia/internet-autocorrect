@@ -300,6 +300,8 @@ extension sees one comment at a time. So the reader can overrule it for one comm
   guards for deliberate language (§3–4) step aside. `restoredEdits` still checks the answer: aligned word by word
   with the original, each changed run must stay close in letters and end in real words, an added or removed word
   alone is ignored, and a different text altogether is dropped. Every change is marked and can be undone as usual.
+  The built-in checker then reads the result, with any fixes from an earlier click, and adds wrong-word swaps that clear
+  its usual bar (`SCORE_DETECT`), because one slip can hide the next beside it (*take at brake*).
 
 Each undoes the other. Only the changed words are kept, under a hash of the paragraph. Without the reader asking,
 jokes stay protected (§3.9).

@@ -708,8 +708,22 @@ async function restoreParagraph(req) {
     appendTrace([{ t: Date.now(), url: req.url, kind: 'ai', verdict: 'asked: no answer', why: res?.error || 'no reply', text: req.text.slice(0, 300) }]);
     return { ok: false, error: ai.engine === 'ollama' && /fetch/i.test(res?.error || '') ? 'ollama' : res?.error || 'no reply' };
   }
-  const edits = IAC_Policy.restoredEdits(req.text, res.text, (w) => dict.has(w));
-  appendTrace([{ t: Date.now(), url: req.url, kind: 'ai', verdict: 'asked', text: req.text.slice(0, 300), corrected: String(res.text).slice(0, 300), edits: edits.length }]);
+  const P = IAC_Policy, isWord = (w) => dict.has(w);
+  // The built-in checker goes over the result: a slip beside another slip only stands out once that one is fixed
+  // (take at brake: break leads by 5 as written, by 12 in take a brake). What was fixed last time counts too.
+  const kept = req.kept || [], model = P.restoredEdits(req.text, res.text, isWord);
+  const fixed = P.applyEdits(req.text, [...kept, ...model.filter((e) => !kept.some((k) => e.start < k.end && e.end > k.start))]);
+  const found = P.slipCandidates(fixed, isWord);
+  let margins = null;
+  askedRunning++;
+  try {
+    if (found.length) margins = await scoreAll(found.map((f) => ({ pre: f.pre, a: f.replacement, b: f.original, suf: f.suf, gate: P.SCORE_GATE })));
+  } finally {
+    askedRunning--;
+  }
+  const slips = margins ? P.slipEdits(found, margins).map((f) => ({ ...f, replacement: matchCase(f.original, f.replacement) })) : [];
+  const edits = P.restoredEdits(req.text, P.applyEdits(fixed, slips), isWord);
+  appendTrace([{ t: Date.now(), url: req.url, kind: 'ai', verdict: 'asked', text: req.text.slice(0, 300), corrected: String(res.text).slice(0, 300), edits: edits.length, slips: slips.map((s) => `${s.original} > ${s.replacement} (${Math.round(s.margin * 10) / 10})`) }]);
   return { ok: true, edits };
 }
 

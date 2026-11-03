@@ -1248,7 +1248,7 @@
       if (had?.edits) placed += placeAsked(block, had.edits);
       let res;
       try {
-        res = await chrome.runtime.sendMessage({ type: 'iac:restore', req: { text, url: location.href } });
+        res = await chrome.runtime.sendMessage({ type: 'iac:restore', req: { text, url: location.href, kept: had?.edits } });
       } catch (_) {
         res = null;
       }

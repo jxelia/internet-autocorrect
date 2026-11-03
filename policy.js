@@ -664,6 +664,18 @@
     return out;
   }
 
+  // The swaps the built-in checker's margins back (one per word, its best), as edits.
+  function slipEdits(found, margins) {
+    const best = new Map();
+    found.forEach((f, i) => {
+      if (margins[i] > SCORE_DETECT && !(margins[i] <= best.get(f.start)?.margin)) best.set(f.start, { ...f, margin: margins[i] });
+    });
+    return [...best.values()];
+  }
+  // text with these edits made ({ start, end, replacement }, none overlapping).
+  const applyEdits = (text, edits) => [...edits].sort((a, b) => b.start - a.start)
+    .reduce((t, e) => t.slice(0, e.start) + e.replacement + t.slice(e.end), text);
+
   // ---------------------------------------------------------------- offline spellchecker
   // A non-word with exactly ONE dictionary word a single keystroke away (a letter dropped, added, changed,
   // or two letters swapped) is very likely a slip for that word: peple -> people, freind -> friend.
@@ -974,6 +986,8 @@
       const original = text.slice(start, end), replacement = cr.map((x) => x.w).join(' ');
       const x = letters(original), y = letters(replacement);
       if (x === y && co.length === cr.length) return; // punctuation or capitals: style
+      // Word for word: each is its own fix, so asking again can add to one without touching the other.
+      if (co.length > 1 && co.length === cr.length) { co.forEach((t, n) => flush([t], [cr[n]])); return; }
       if (levenshtein(x, y) > Math.max(2, Math.ceil(Math.max(x.length, y.length) * 0.5))) return;
       const bare = (w) => norm(w).replace(/^[^a-z']+|[^a-z']+$/g, '');
       const compound = (w) => [...w].some((_, n) => n >= 3 && w.length - n >= 3 && isWord(w.slice(0, n)) && isWord(w.slice(n))); // autocorrect
@@ -1085,7 +1099,7 @@ These are DELIBERATE and must be left alone:
     DELIBERATE, CONTRACTIONS, PROMPT_POLICY, notEnglishReason,
     protectedReason, dialectDensity, isElided, isRegionalVariant, checkAiEdit, locate, levenshtein, soundex,
     splitEdit, classify, worthChecking, CONFUSABLE, casualForm, knowsStandard, registerOf, allowCasualFix,
-    sentenceAround, slipCandidates, SCORE_VETO, SCORE_CONFIRM, SCORE_DETECT, SCORE_GATE, SCORE_RANK, MAX_DETECT, spellCheckable, spellSuggestions, mechanism, judgeEdit, alternatives, keyboardSlip, confusionPair,
+    sentenceAround, slipCandidates, slipEdits, applyEdits, SCORE_VETO, SCORE_CONFIRM, SCORE_DETECT, SCORE_GATE, SCORE_RANK, MAX_DETECT, spellCheckable, spellSuggestions, mechanism, judgeEdit, alternatives, keyboardSlip, confusionPair,
     articleFor, wordForm, isWordForm, frameForm, nameReason, namesIn, isTitleCase, KNOWN_NAMES, REGULARISED, FLAT_ADVERBS,
     restoredEdits, missingLetters, regionalTable, regionalReason, REGION_NAME, varietyName, isQuoted, mentionReason, META_WORDS, capsStyle,
   };

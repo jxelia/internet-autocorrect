@@ -163,6 +163,26 @@ const cand = { original: 'their', replacement: 'there', sentence: 's', fixedSent
   await send({ type: 'iac:proofread', id: 's4', prio: 1, req: { text: 'Everyone said it attaches to the wall and we use renewables at home now.', url: 'u', candidates: [] } });
   check('regular forms are not ranked', !ranked.some((i) => /attaches|renewables/.test(i.original)), JSON.stringify(ranked).slice(0, 200));
 
+  // Fix this comment: the built-in checker reads the model's result, not the text as written
+  stores.sync.ai = { engine: 'ollama', read: true, model: 'x' };
+  const JOKE = 'I think we need to take at brake at this point in the road.';
+  const askedScores = [];
+  model = async (m) => {
+    if (m.type === 'restore') return { ok: true, text: 'I think we need to take a brake at this point in the road.' };
+    if (m.type === 'score') { askedScores.push(...m.items); return { ok: true, margins: m.items.map((i) => (i.a === 'break' ? 12 : -20)) }; }
+    return { ok: true, result: { checks: [], edits: [] } };
+  };
+  const swaps = (r) => (r.edits || []).map((e) => `${e.original}>${e.replacement}`).join();
+  const restored = await send({ type: 'iac:restore', req: { text: JOKE, url: 'u' } });
+  check('fix this comment adds what the checker sees after the model', swaps(restored) === 'at>a,brake>break', JSON.stringify(restored).slice(0, 200));
+  check('the checker read the fixed sentence', askedScores.some((i) => i.a === 'break' && /take a $/.test(i.pre)), JSON.stringify(askedScores).slice(0, 200));
+  model = async (m) => (m.type === 'restore' ? { ok: true, text: JOKE } : m.type === 'score' ? { ok: true, margins: m.items.map((i) => (i.a === 'break' && /take a $/.test(i.pre) ? 12 : -20)) } : { ok: true });
+  const again = await send({ type: 'iac:restore', req: { text: JOKE, url: 'u', kept: [{ start: JOKE.indexOf('at brake'), end: JOKE.indexOf('at brake') + 2, original: 'at', replacement: 'a' }] } });
+  check('a second click builds on what was fixed before', swaps(again).includes('brake>break'), JSON.stringify(again).slice(0, 200));
+  model = async (m) => (m.type === 'restore' ? { ok: true, text: 'I think we need to take a brake at this point in the road.' } : { ok: false, error: 'checker down' });
+  const restoreDown = await send({ type: 'iac:restore', req: { text: JOKE, url: 'u' } });
+  check('with the checker down, the model\u2019s fixes stand', swaps(restoreDown) === 'at>a', JSON.stringify(restoreDown).slice(0, 200));
+
   console.log(`${passed} passed, ${failed} failed`);
   Deno.exit(failed ? 1 : 0);
 })();
