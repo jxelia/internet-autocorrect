@@ -156,5 +156,19 @@ for (const [text, lang, foreign] of [
   const got = !!P.notEnglishReason(text, lang);
   if (got === foreign) pass++; else { fail++; console.log(`FAIL language ${text}: ${got}, wanted ${foreign}`); }
 }
+// May the built-in checker rank a spelling suggestion (POLICY.md §5.6)?
+const spellWords = new Set(['attach', 'attached', 'renewable', 'everyone', 'furniture', 'swap', 'people', 'probably', 'stop', 'stopped', 'run', 'running']);
+for (const [from, to, want] of [
+  ['peple', 'people', true], ['probaby', 'probably', true], ['stoped', 'stopped', true], ['runing', 'running', true],
+  ['Peple', 'People', false], ['zswap', 'swap', false], ['attaches', 'attached', false], ['renewables', 'renewable', false],
+  ['everyones', 'everyone', false], ['furnitures', 'furniture', false],
+]) {
+  const got = P.spellCheckable(from, to, (w) => spellWords.has(w));
+  if (got === want) pass++; else { fail++; console.log(`FAIL spellCheckable ${from} > ${to}: ${got}`); }
+}
+for (const [a, b, want] of [['focussing', 'focusing', true], ['biassed', 'biased', true], ['pased', 'passed', false], ['cassing', 'casing', false]]) {
+  const got = !!P.isRegionalVariant?.(a, b);
+  if (got === want) pass++; else { fail++; console.log(`FAIL regional ${a} > ${b}: ${got}`); }
+}
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

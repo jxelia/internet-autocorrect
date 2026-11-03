@@ -60,10 +60,11 @@ check. Thresholds (`policy.js`), set on real text and then checked on 1,500 unse
 | Veto a context rule's fix | margin below -3 (`SCORE_VETO`) | wrongly vetoes 2 of 80 test fixes and 0 of 112 real fires; catches 6 of 10 false fires (gemma3:4b: 3, 0, 3) |
 | Confirm a proposed confusion-pair fix | margin above 6 (`SCORE_CONFIRM`) | 0 wrong of 120 items at margins 2 to 6, keeping 100 to 117 good (gemma3:4b: 5 wrong, 36 good) |
 | Find a slip nobody proposed | margin above 10 (`SCORE_DETECT`), pairs from the confusion sets only (`slipCandidates`) | 3 flagged in 2,072 word pairs, all real; about 64% of planted slips |
+| Spell a non-word | the one dictionary word a keystroke away ranks in the top 50 of the whole vocabulary for that slot (`SCORE_RANK`), after `spellCheckable` | see GOALS.md §6 |
 
 The margin replaces the AI's vote only. Everything it proposes still passes `judgeEdit` and the guards in §3–4. It has
-no opinion on anything outside a confusion pair, so spelling, dropped letters and restoring a broken comment stay with
-the larger models.
+no opinion on a real word outside a confusion pair, on a non-word with several near neighbours or none, or on a non-word
+its vocabulary holds whole. Those, dropped letters and restoring a broken comment stay with the larger models.
 
 **When a new kind of case appears**, place it with these three questions. Don't add a one-off exception. If
 none of the answers fits it, the model needs a new mechanism, gravity level or signal, and that goes here first.
@@ -272,10 +273,15 @@ by the sentence.
    must be confirmed by the AI in both orders.
 5. **AI double-check of context rules**: "which of these two sentences is correct?", asked in both orders. A rule
    fix is held back only if both answers agree.
-6. **Offline spellchecker, confirmed by the AI**: a non-word (not protected by sections 3–4) with exactly one
-   dictionary word a single keystroke away (*peple → people*) is suggested to the AI with the same two-sentence
-   question. Here the burden is reversed: the fix is kept only if **both** answers prefer it. Non-words with
-   several near neighbours (*realy*) or none (*doomscroll*) are left to the AI's own reading.
+6. **Offline spellchecker, confirmed by the built-in checker or the AI**: a non-word (not protected by sections 3–4)
+   with exactly one dictionary word a single keystroke away (*peple → people*) is a suggestion. Non-words with several
+   near neighbours (*realy*) or none (*doomscroll*) are left to the AI's own reading. While browsing, the built-in
+   checker decides: the word must fit the slot, ranking in its top 50, and these are left alone first (`spellCheckable`):
+   capitalised words; a word with a letter added at the front (*zswap*, a name, not *swap*); a word that differs only
+   in a final s, d or r (*attaches / attached*); a regular plural or -s form of a real word that the dictionary lacks
+   (*renewables*, *everyones*); and any word the checker's own vocabulary holds whole. *focussing* and *biassed* are
+   accepted spellings (§7), not slips. With the language model, asked for, the fix is kept only if **both** orders of
+   the two-sentence question prefer it.
 7. **Final safety check** (always, even on AI output), in `background.js`:
    - The policy guards again.
    - A *spelling* fix must turn a non-word into dictionary words.

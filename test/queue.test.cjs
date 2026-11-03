@@ -132,13 +132,36 @@ const cand = { original: 'their', replacement: 'there', sentence: 's', fixedSent
   check('browsing does not wait for scrolling to stop', calls.length > 0);
   const browsing = await browsed;
   check('browsing gets the checker\'s answer', browsing.ok && browsing.result.checks.length === 1, JSON.stringify(browsing).slice(0, 160));
-  check('browsing asks no language model', calls.every((c) => c.type === 'score'), calls.map((c) => c.type).join());
+  check('browsing asks no language model', calls.every((c) => c.type === 'score' || c.type === 'rank'), calls.map((c) => c.type).join());
   model = async () => ({ ok: false, error: 'checker down' });
   calls.length = 0;
   const down = await send({ type: 'iac:proofread', id: 'b2', prio: 1, req: { text: para(41), url: 'u',
     candidates: [{ original: 'their', replacement: 'there', pre: 'x ', suf: ' y', sentence: 's', fixedSentence: 'f' }] } });
-  check('with the checker down, still no language model', !calls.some((c) => c.type !== 'score'), calls.map((c) => c.type).join());
+  check('with the checker down, still no language model', !calls.some((c) => c.type !== 'score' && c.type !== 'rank'), calls.map((c) => c.type).join());
   check('and that is not saved as an answer', down.noAnswer === true, JSON.stringify(down).slice(0, 160));
+
+  // A non-word the lists don't know: fixed if the one word a keystroke away ranks high for the slot.
+  stores.sync.ai = { engine: 'small', read: true };
+  const ranked = [];
+  let rankAnswer = () => 3;
+  model = async (m) => {
+    if (m.type === 'rank') { ranked.push(...m.items); return { ok: true, ranks: m.items.map(() => rankAnswer()) }; }
+    if (m.type === 'score') return { ok: true, margins: m.items.map(() => -20) };
+    return { ok: false, error: 'a language model was asked' };
+  };
+  calls.length = 0;
+  const speltOk = await send({ type: 'iac:proofread', id: 's1', prio: 1, req: { text: 'She said the peple would leave the house before the rain came.', url: 'u', candidates: [] } });
+  check('a high rank fixes the spelling', speltOk.result.edits.some((e) => e.original === 'peple' && e.replacement === 'people'), JSON.stringify(speltOk.result).slice(0, 200));
+  check('spelling asks no language model', calls.every((c) => c.type === 'score' || c.type === 'rank'), calls.map((c) => c.type).join());
+  rankAnswer = () => 51;
+  const speltLow = await send({ type: 'iac:proofread', id: 's2', prio: 1, req: { text: 'They said the peple would leave the house before the rain came.', url: 'u', candidates: [] } });
+  check('a low rank leaves it', !speltLow.result.edits.some((e) => e.original === 'peple'), JSON.stringify(speltLow.result).slice(0, 200));
+  rankAnswer = () => null;
+  const speltNone = await send({ type: 'iac:proofread', id: 's3', prio: 1, req: { text: 'We said the peple would leave the house before the rain came.', url: 'u', candidates: [] } });
+  check('no rank leaves it', !speltNone.result.edits.some((e) => e.original === 'peple'), JSON.stringify(speltNone.result).slice(0, 200));
+  ranked.length = 0;
+  await send({ type: 'iac:proofread', id: 's4', prio: 1, req: { text: 'Everyone said it attaches to the wall and we use renewables at home now.', url: 'u', candidates: [] } });
+  check('regular forms are not ranked', !ranked.some((i) => /attaches|renewables/.test(i.original)), JSON.stringify(ranked).slice(0, 200));
 
   console.log(`${passed} passed, ${failed} failed`);
   Deno.exit(failed ? 1 : 0);

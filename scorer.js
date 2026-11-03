@@ -69,16 +69,20 @@ const IAC_Scorer = (() => {
     session = null;
   }
 
-  // Log-probabilities at each row's position, for looking up token ids.
-  async function logprobs(seqs, positions) {
+  // The model's raw scores for every vocabulary word, at each row's position.
+  async function logits(seqs, positions) {
     const len = Math.max(...seqs.map((s) => s.length));
     const a = new BigInt64Array(seqs.length * len), m = new BigInt64Array(seqs.length * len);
     seqs.forEach((s, r) => s.forEach((v, c) => { a[r * len + c] = BigInt(v); m[r * len + c] = 1n; }));
     const dims = [seqs.length, len];
     const out = await session.run({ input_ids: new ort.Tensor('int64', a, dims), attention_mask: new ort.Tensor('int64', m, dims) });
     const l = out.logits.data, V = out.logits.dims[2];
-    return positions.map((p, r) => {
-      const row = l.subarray((r * len + p) * V, (r * len + p + 1) * V);
+    return positions.map((p, r) => l.subarray((r * len + p) * V, (r * len + p + 1) * V));
+  }
+
+  // Log-probabilities at each row's position, for looking up token ids.
+  async function logprobs(seqs, positions) {
+    return (await logits(seqs, positions)).map((row) => {
       let mx = -Infinity;
       for (const x of row) if (x > mx) mx = x;
       let sum = 0;
@@ -117,7 +121,27 @@ const IAC_Scorer = (() => {
     return out;
   }
 
-  return { scoreAll, encode, tokens };
+  // item: { pre, original, word, suf } -> where word ranks among all words for the slot, 1 = the model's first choice.
+  // Null when it can't say: word is more than one token, or original is a whole token, so the model knows it as a word.
+  async function rank(item) {
+    const word = encode(item.word);
+    if (word.length !== 1 || encode(item.original).length < 2) return null;
+    const pre = encode(item.pre).slice(-CONTEXT), suf = encode(item.suf).slice(0, CONTEXT);
+    const [row] = await logits([[CLS, ...pre, MASK, ...suf, SEP]], [1 + pre.length]);
+    const v = row[word[0]];
+    let above = 0;
+    for (const x of row) if (x > v) above++;
+    return above + 1;
+  }
+
+  async function rankAll(items, base) {
+    await load(base);
+    const out = [];
+    for (const item of items) out.push(await rank(item));
+    return out;
+  }
+
+  return { scoreAll, rankAll, encode, tokens };
 })();
 
 if (typeof module !== 'undefined') module.exports = IAC_Scorer;

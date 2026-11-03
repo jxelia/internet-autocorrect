@@ -75,6 +75,7 @@
 
   function isRegionalVariant(a, b) {
     const x = a.toLowerCase(), y = b.toLowerCase();
+    if (/^(focus|bias)s(ed|es|ing)$/.test(x) && x.replace('ss', 's') === y) return true; // accepted doubled s
     return REGIONAL.get(x) === y || (x !== y && variantKey(x) === variantKey(y));
   }
 
@@ -641,6 +642,7 @@
   const SCORE_CONFIRM = 6; // something the AI proposed goes ahead only if the fix is this far ahead
   const SCORE_DETECT = 10; // nothing else proposed it: a swap is only suggested at this margin
   const SCORE_GATE = 4; // a quick look first, so a clear no costs one model call
+  const SCORE_RANK = 50; // a spelling fix must rank this high among all words for the slot (POLICY.md §5.6)
   const MAX_DETECT = 12;
   const NOT_A_FORM = new Set(['theyre', 'youre', 'yore', 'wether', 'rite', 'reck', 'loosing', 'wear', 'allot', 'bye', 'alot', 'dew', 'vane']);
 
@@ -667,7 +669,8 @@
   // or two letters swapped) is very likely a slip for that word: peple -> people, freind -> friend.
   // With several neighbours (realy: really, rely, relay…) or none (doomscroll) nothing is suggested, which
   // also keeps most brand names out (flickr: flick, flicker, flicks). A suggestion is never applied on its
-  // own: the AI must prefer the corrected sentence in both orders, then the final check runs as usual.
+  // own: the built-in checker must rank it high for the slot (spellCheckable, SCORE_RANK), or the AI must prefer the
+  // corrected sentence in both orders, then the final check runs as usual.
 
   const ALPHABET = 'abcdefghijklmnopqrstuvwxyz';
 
@@ -717,6 +720,16 @@
       });
     }
     return out;
+  }
+
+  // May the built-in checker rank this suggestion at all (POLICY.md §5.6)? These look like slips to a dictionary and
+  // aren't: a name, a different ending of the same word, a regular form the dictionary happens to lack.
+  function spellCheckable(original, replacement, isWord) {
+    const w = original.toLowerCase(), r = replacement.toLowerCase();
+    if (/^[A-Z]/.test(original) || w.slice(1) === r) return false;
+    if (w.replace(/[sdr]$/, '') === r.replace(/[sdr]$/, '')) return false;
+    if (/s$/.test(w) && isWord(w.slice(0, -1))) return false;
+    return !(/(s|x|z|ch|sh|o)es$/.test(w) && isWord(w.slice(0, -2)));
   }
 
   // ---------------------------------------------------------------- a / an (POLICY.md §2)
@@ -1072,7 +1085,7 @@ These are DELIBERATE and must be left alone:
     DELIBERATE, CONTRACTIONS, PROMPT_POLICY, notEnglishReason,
     protectedReason, dialectDensity, isElided, isRegionalVariant, checkAiEdit, locate, levenshtein, soundex,
     splitEdit, classify, worthChecking, CONFUSABLE, casualForm, knowsStandard, registerOf, allowCasualFix,
-    sentenceAround, slipCandidates, SCORE_VETO, SCORE_CONFIRM, SCORE_DETECT, SCORE_GATE, spellSuggestions, mechanism, judgeEdit, alternatives, keyboardSlip, confusionPair,
+    sentenceAround, slipCandidates, SCORE_VETO, SCORE_CONFIRM, SCORE_DETECT, SCORE_GATE, SCORE_RANK, MAX_DETECT, spellCheckable, spellSuggestions, mechanism, judgeEdit, alternatives, keyboardSlip, confusionPair,
     articleFor, wordForm, isWordForm, frameForm, nameReason, namesIn, isTitleCase, KNOWN_NAMES, REGULARISED, FLAT_ADVERBS,
     restoredEdits, missingLetters, regionalTable, regionalReason, REGION_NAME, varietyName, isQuoted, mentionReason, META_WORDS, capsStyle,
   };

@@ -25,7 +25,7 @@ These samples are small: 10 false fires can't separate 6 from 3 with any confide
 
 **Finding slips nobody proposed.** On 1,500 unseen Hacker News paragraphs (2,072 word pairs), a threshold of 10 flagged 3, all real. A threshold of 6 flagged 10, of which 2 were wrong, so the threshold stays at 10. On planted slips it finds about 64%. Of 29 sentences written to trap it, it placed 3 fixes: 2 real slips and 1 wrong (*Better late then never… misquotes it*).
 
-**What it can't do.** It only knows confusion pairs. It doesn't replace the larger models for spelling or dropped letters, and it refuses comment restoring.
+**What it can't do.** It only knows confusion pairs. It doesn't replace the larger models for spelling or dropped letters, and it refuses comment restoring. (From 1.13.0 it also checks one-keystroke misspellings; see GOALS.md §6.)
 
 gemma3:4b with the full 1.11.0 pipeline: 21 of 25 paragraphs exactly right, 0 wrong fixes, 5 missed slips, 213 s.
 

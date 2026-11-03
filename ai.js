@@ -268,6 +268,8 @@ if (typeof chrome !== 'undefined' && chrome.runtime) chrome.runtime.onMessage.ad
         reply({ ok: true, votes: await confirm(msg.items, msg.ai, call) });
       } else if (msg.type === 'score') {
         reply({ ok: true, margins: await IAC_Scorer.scoreAll(msg.items, chrome.runtime.getURL('')) });
+      } else if (msg.type === 'rank') {
+        reply({ ok: true, ranks: await IAC_Scorer.rankAll(msg.items, chrome.runtime.getURL('')) });
       } else {
         reply({ ok: false, error: 'unknown' });
       }

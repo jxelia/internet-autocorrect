@@ -575,6 +575,28 @@ async function scoreAll(items) {
   }
 }
 
+// Non-words the lists don't know: the one dictionary word a keystroke away, if it fits the slot. judgeEdit in review()
+// still has its say. POLICY.md §5.6.
+async function checkSpelling(text, isWord) {
+  const P = IAC_Policy;
+  const found = P.spellSuggestions(text, isWord, {
+    max: P.MAX_DETECT,
+    known: (w) => self.IAC_Engine.isKnownMisspelling(w),
+    mentioned: (w) => self.IAC_Engine.isMentioned(text, w),
+  }).filter((f) => P.spellCheckable(f.original, f.replacement, isWord));
+  if (!found.length) return [];
+  let ranks = null;
+  try {
+    const res = await withTimeout(toAI({ type: 'rank', items: found.map((f) => ({ pre: f.pre, original: f.original, word: f.replacement, suf: f.suf })) }), SCORE_LIMIT_MS);
+    ranks = res?.ok && Array.isArray(res.ranks) ? res.ranks : null;
+  } catch (_) {}
+  if (!ranks) return [];
+  return found.flatMap((f, i) => (ranks[i] && ranks[i] <= P.SCORE_RANK ? [{
+    original: f.original, replacement: f.replacement, type: 'spelling', source: 'built-in', scored: true,
+    context: f.context, rank: ranks[i],
+  }] : []));
+}
+
 // Swaps nothing proposed: suggested only when the other word is far ahead. judgeEdit in review() still has its say.
 async function detectSlips(text, isWord) {
   const P = IAC_Policy;
@@ -634,7 +656,7 @@ async function pump() {
       // Rule questions: the built-in checker when it can answer, the language model when it can't.
       const margins = cands.length ? await scoreAll(cands.map((c) => ({ pre: c.pre, a: c.replacement, b: c.original, suf: c.suf }))) : null;
       const rulesRes = cands.length && !margins && llm ? await timedAI({ type: 'proofread', ai, req: { ...asked, find: false } }, AI_LIMIT_MS) : null;
-      const detected = reading ? await detectSlips(job.req.text, isWord) : [];
+      const detected = reading ? [...await detectSlips(job.req.text, isWord), ...await checkSpelling(job.req.text, isWord)] : [];
       const readRes = find && (!rulesRes || rulesRes.ok) ? await timedAI({ type: 'proofread', ai, req: { ...asked, candidates: [], find: true } }, AI_LIMIT_MS) : null;
       if (readRes || rulesRes) await noteAiOutcome(readRes || rulesRes, find);
       const checks = margins ? margins.map((m, n) => ({ n: n + 1, ok: m >= -IAC_Policy.SCORE_VETO })) : rulesRes?.result?.checks || [];

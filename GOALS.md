@@ -153,6 +153,7 @@ lowercase (casual writing, people's own style), and capitals don't always mark n
 | "There can be 0 lag… load with whatever fixes need to be implemented as if they're already part of the page", including on scroll and buttons (2026-11-03) | Text was walked after load in long tasks, and hover and AI placement ran during input | Engineering (no language question) | 1.11.0: `document_start`, fixes written in the slice the parser delivers them (4 ms budget), rest in 5 ms idle slices, input pauses AI work and late placement. 5000 paragraphs: longest slice 9 ms, none over 16 ms | — |
 | Can the project use another extension's engine tiers (ThreadCast, 2026-11-03)? | Only large models answered "which word fits", and they are slow and hot | Real-word error correction | 1.11.0: Built-in engine, a 65 MB masked-word scorer for confusion pairs: fewer wrong fixes than gemma3:4b and far more good ones on this job, 90 ms a question, no download | — |
 | Laptop hot and Reddit unusable with the AI on, even after every earlier heat cap; had to turn it off (2026-11-03). "It should just work, as if it's all already dark mode" (said of Dark Screenshots for Reddit, same cause, same fix asked for here) | A language model fills the GPU that also scrolls the page. Rationing it (1.7.26, 1.8.0, 1.8.1) only spread the heat out | — (performance, not a language case) | 1.12.0: browsing is rules plus the built-in checker on one CPU thread, on every engine, reaching 2 screens ahead with a 150 ms dwell. Nano and Ollama run only when asked: Check the whole page, or Fix this comment. Built-in is the default; a stored Off moved to Built-in once | — |
+| Couldn't Harper or a better engine catch what browsing misses (2026-11-03)? | Non-words the lists don't know went unchecked without a language model | Spelling, with the sentence as context | Harper measured and rejected; 1.13.0: nearest word must rank in the built-in checker's top 50 for the slot (§6) | Spelling |
 | *definately* in quotes / italics | Word mentioned, not used | Meaning and use | Use-vs-mention guards; since 1.7.22 only when the evidence shows a mention or echo (`the word "definately"`, `"definately" lol`), not for scare quotes or emphasis | — (left alone) |
 
 ## 6. Open questions and ideas
@@ -168,15 +169,18 @@ lowercase (casual writing, people's own style), and capitals don't always mark n
   wrong; Miscellaneous right but mostly what the rules already fix; the rest don't survive the gate. Its first suggestion is often wrong
   for real typos too (*exlusively → elusively, colleage → collage*). Filtered like the check below and re-ranked by the
   built-in checker, what it adds beyond the project's own suggester is 7 right of 17.
-- **Better than Harper, measured, not built: non-words while browsing, with no new engine.** `spellSuggestions` (one
+- **Built, 1.13.0 (2026-11-03): non-words while browsing, with no new engine, after Harper failed.** `spellSuggestions` (one
   dictionary word a single edit away) gets a second test from the built-in checker: mask the word and ask where the
   replacement ranks among the model's words for that slot. A typo's fix fits; jargon's lookalike doesn't (*frontend → fronted*
-  ranks in the thousands). Keep it if the rank is 100 or better, the word is lower case, the original isn't one of the model's
-  own whole words, and the two don't differ by a final *s/d/r*. First sample (used to choose those limits): 12 right, 1 wrong.
-  **Unseen sample, 5,650 Hacker News paragraphs: 25 right, 2 wrong** (*zswap → swap, attaches → attached*), about one fix
-  per 200 paragraphs, 99 ms each, on about one paragraph in 20. Close to the bar (3 wrong of 137) but not yet at it; the sample is small.
-  Known gap: a fix the model holds as several pieces can't be ranked, so *refridgeration* and *incovenience*
-  are missed (11 of 34 real typos in the first sample).
+  ranks in the thousands). Left alone first (`spellCheckable`): capitals, a letter added at the front (*zswap*), a different
+  final s, d or r (*attaches / attached*), a regular plural the dictionary lacks (*renewables*), and any word the model holds
+  whole. *focussing* and *biassed* count as accepted spellings. The history: the first sample chose the limits (rank 100: 12
+  right, 1 wrong), the second, 5,650 Hacker News paragraphs, gave 25 right, 2 wrong, and both wrong ones led to the rules above.
+  **Limit of 50 fixed beforehand, unseen sample, 19,049 Hacker News paragraphs: 84 fixes, 83 right, 1 wrong** (*"antient
+  philosophers"*, an old spelling in a quote), against the bar of about 3 wrong in 137. *initiativ* is counted right but could be
+  deliberate. About one fix per 230 paragraphs; one paragraph in 38 pays for a check, about 100 ms. Known gaps: a fix the
+  model holds as several pieces can't be ranked, so *refridgeration* and *incovenience* are still missed (11 of 34 real typos in
+  the first sample), and so are typos more than one edit away or with several neighbours; Check the whole page still covers those.
 - **Not adopted, 2026-11-03:** Chrome's Proofreader API: no evidence it has shipped.
   Report: `reports/Efficient on-device AI for proofreading.md`.
 - **Going public (the user, 2026-11-03: "a long way from workable... need to get it in public too").** 1.10.0 did the
@@ -191,7 +195,7 @@ lowercase (casual writing, people's own style), and capitals don't always mark n
   the rule fixes (instant and always the same, and saving them would freeze old rules); the user's own choices are
   saved separately and outrank both. Open: cache size (now 1000 paragraphs), whether to keep answers for
   paragraphs never seen, and whether a page's history should prefetch anything.
-- **Language models only when asked (1.12.0, 2026-11-03; decided by Claude after the user said to rewrite the AI foundation from first principles).** The user turned the AI off for heat even after the caps below. Surveying other extensions: none runs an LLM over every feed item automatically without heat; those that run on their own use tiny models or rules, and the rest wait for a click. So Nano and Ollama no longer read while browsing at all. **This costs recall, and it's the same tension as 1.8.1's "isn't the point of the AI checker to be there for stuff the rules don't know?"**: browsing no longer catches what only a language model would (non-words with one neighbour confirmed by it, slips outside the checker's confusion pairs). If the user misses those, the next step is a better cheap check, not bringing back background LLM calls: Harper was measured and failed, and the spelling check above is the candidate. Dark Screenshots for Reddit got the same rewrite (a 14 ms MobileNetV4 in place of the LLM). The entries below are the history.
+- **Language models only when asked (1.12.0, 2026-11-03; decided by Claude after the user said to rewrite the AI foundation from first principles).** The user turned the AI off for heat even after the caps below. Surveying other extensions: none runs an LLM over every feed item automatically without heat; those that run on their own use tiny models or rules, and the rest wait for a click. So Nano and Ollama no longer read while browsing at all. **This costs recall, and it's the same tension as 1.8.1's "isn't the point of the AI checker to be there for stuff the rules don't know?"**: browsing no longer catches what only a language model would (non-words with one neighbour confirmed by it, slips outside the checker's confusion pairs). If the user misses those, the next step is a better cheap check, not bringing back background LLM calls: Harper was measured and failed, and the spelling check above is that check (1.13.0). Dark Screenshots for Reddit got the same rewrite (a 14 ms MobileNetV4 in place of the LLM). The entries below are the history.
 - **Nano heat vs. coverage (user notes, 2026-10-27; notes only, not to implement yet).** Gemini Nano running the
   find pass on every paragraph heats the Mac. The rules must not decide what the AI reads (the AI catches more than
   the rules). Proposed relief: read only what stays in view, skip hidden tabs, pause between calls, maybe batch
