@@ -6,7 +6,7 @@ unless a source is named. Working notes: `research_notes/Efficient on-device AI 
 ## The short answer
 
 - **Use the smallest engine that can answer each question.** "Which of these two words fits here?" doesn't need a language model that writes. A 65 MB masked-word scorer answered it better than gemma3:4b, about 30 times faster per question.
-- **Keep the larger models for what only they can do:** spelling the rules don't know, dropped letters, and restoring a broken comment.
+- **Keep the larger models for what only they can do:** spelling the rules and the built-in check miss, dropped letters, and restoring a broken comment.
 - **Page lag is a main-thread problem, not a model problem.** All model work was already off the page. The lag came from walking the page in long tasks, and from a few expensive DOM calls.
 
 ## Which engine for which job
