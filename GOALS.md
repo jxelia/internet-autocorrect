@@ -161,8 +161,23 @@ lowercase (casual writing, people's own style), and capitals don't always mark n
   fixes on a page seen before can too, but only if Remember the AI's answers is on, and it's off by default for
   privacy (1.8.2). Fixes on a first visit can't be there at load, since no model answers before the paint. Left off
   until the user decides.
-- **Not adopted, 2026-11-03:** Harper (Apache-2.0, 20 MB WASM): precision unmeasured, many false-positive reports;
-  would be a candidate source behind `judgeEdit` if measured. Chrome's Proofreader API: no evidence it has shipped.
+- **Measured and not adopted, 2026-11-03: Harper** (harper.js 3.0.0, Apache-2.0, one WASM 20.4 MB). Run through `judgeEdit` on
+  2,948 Hacker News and 394 Reddit paragraphs, every surviving fix read by hand. Speed is fine (median 4.7 ms a paragraph,
+  worst 1.3 s). Precision isn't: about 360 Spelling fixes survive, mostly jargon and names turned into words (*etc → eta,
+  firefox → firebox, iptables → eatables*); Typo 5 of 5 wrong (*quite → quiet*); WordChoice and Grammar mixed, about half
+  wrong; Miscellaneous right but mostly what the rules already fix; the rest don't survive the gate. Its first suggestion is often wrong
+  for real typos too (*exlusively → elusively, colleage → collage*). Filtered like the check below and re-ranked by the
+  built-in checker, what it adds beyond the project's own suggester is 7 right of 17.
+- **Better than Harper, measured, not built: non-words while browsing, with no new engine.** `spellSuggestions` (one
+  dictionary word a single edit away) gets a second test from the built-in checker: mask the word and ask where the
+  replacement ranks among the model's words for that slot. A typo's fix fits; jargon's lookalike doesn't (*senior ___
+  engineer* doesn't want *fronted*). Keep it if the rank is 100 or better, the word is lower case, the original isn't one of the model's
+  own whole words, and the two don't differ by a final *s/d/r*. First sample (used to choose those limits): 12 right, 1 wrong.
+  **Unseen sample, 5,650 Hacker News paragraphs: 25 right, 2 wrong** (*zswap → swap, attaches → attached*), about one fix
+  per 200 paragraphs, 99 ms each, on about one paragraph in 20. Close to the bar (3 wrong of 137) but not yet at it; the sample is small.
+  Known gap: a fix the model holds as several pieces can't be ranked, so *refridgeration* and *incovenience*
+  are missed (11 of 34 real typos in the first sample).
+  Chrome's Proofreader API: no evidence it has shipped.
   Report: `reports/Efficient on-device AI for proofreading.md`.
 - **Going public (the user, 2026-11-03: "a long way from workable... need to get it in public too").** 1.10.0 did the
   blockers (other languages, measured precision, no Claude in the interface, reading backs off, copies opt-in, store
@@ -176,7 +191,7 @@ lowercase (casual writing, people's own style), and capitals don't always mark n
   the rule fixes (instant and always the same, and saving them would freeze old rules); the user's own choices are
   saved separately and outrank both. Open: cache size (now 1000 paragraphs), whether to keep answers for
   paragraphs never seen, and whether a page's history should prefetch anything.
-- **Language models only when asked (1.12.0, 2026-11-03; decided by Claude after the user said to rewrite the AI foundation from first principles).** The user turned the AI off for heat even after the caps below. Surveying other extensions: none runs an LLM over every feed item automatically without heat; those that run on their own use tiny models or rules, and the rest wait for a click. So Nano and Ollama no longer read while browsing at all. **This costs recall, and it's the same tension as 1.8.1's "isn't the point of the AI checker to be there for stuff the rules don't know?"**: browsing no longer catches what only a language model would (non-words with one neighbour confirmed by it, slips outside the checker's confusion pairs). If the user misses those, the next step is a better cheap engine, not bringing back background LLM calls: Harper (Rust/WASM grammar rules, 14.8 MB) is the noted option. Dark Screenshots for Reddit got the same rewrite (a 14 ms MobileNetV4 in place of the LLM). The entries below are the history.
+- **Language models only when asked (1.12.0, 2026-11-03; decided by Claude after the user said to rewrite the AI foundation from first principles).** The user turned the AI off for heat even after the caps below. Surveying other extensions: none runs an LLM over every feed item automatically without heat; those that run on their own use tiny models or rules, and the rest wait for a click. So Nano and Ollama no longer read while browsing at all. **This costs recall, and it's the same tension as 1.8.1's "isn't the point of the AI checker to be there for stuff the rules don't know?"**: browsing no longer catches what only a language model would (non-words with one neighbour confirmed by it, slips outside the checker's confusion pairs). If the user misses those, the next step is a better cheap engine, not bringing back background LLM calls: Harper (Rust/WASM grammar rules, 20.4 MB) is the noted option. Dark Screenshots for Reddit got the same rewrite (a 14 ms MobileNetV4 in place of the LLM). The entries below are the history.
 - **Nano heat vs. coverage (user notes, 2026-10-27; notes only, not to implement yet).** Gemini Nano running the
   find pass on every paragraph heats the Mac. The rules must not decide what the AI reads (the AI catches more than
   the rules). Proposed relief: read only what stays in view, skip hidden tabs, pause between calls, maybe batch
