@@ -62,7 +62,7 @@ From Firefox's page translator ([source](https://searchfox.org/mozilla-central/s
 
 | Option | Why not |
 |---|---|
-| Harper (Apache-2.0, 20.4 MB WASM) | No measured precision anywhere, many false-positive reports. Worth the same test as the scorer before use. |
+| Harper (Apache-2.0, 20.4 MB WASM) | Measured afterwards on 3,342 comment paragraphs: no lint type clears the bar, and most Spelling fixes are wrong. Details in GOALS.md §6. |
 | Chrome's Proofreader API | No evidence it has shipped; [docs](https://developer.chrome.com/docs/ai/proofreader-api) still describe a trial. |
 | Batching paragraphs into one Nano call | Saves calls, not heat. |
 | Voting across several runs | Too hot for what it adds. |
